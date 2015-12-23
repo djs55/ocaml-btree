@@ -14,3 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+
+module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
+  type 'a io = 'a Lwt.t
+  type element = E.t
+
+  type t = unit
+
+  let insert _ _ = failwith "insert"
+  let delete _ _ = failwith "delete"
+end

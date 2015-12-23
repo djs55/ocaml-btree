@@ -18,7 +18,7 @@
 module type COMPARABLE = sig
   type t
 
-	val compare: t -> t -> int
+  val compare: t -> t -> int
 end
 
 module type SERIALISABLE = sig
@@ -26,15 +26,38 @@ module type SERIALISABLE = sig
 
   type 'a error = ('a, [ `Msg of string]) Result.result
 
-	val size: int
+  val size: int
 
-	val marshal: t -> Cstruct.t -> Cstruct.t error
-	val unmarshal: Cstruct.t -> (t * Cstruct.t) error
+  val marshal: t -> Cstruct.t -> Cstruct.t error
+  val unmarshal: Cstruct.t -> (t * Cstruct.t) error
 end
 
-module type KEY = sig
+(** Data stored within the B-tree nodes *)
+module type ELEMENT = sig
   type t
 
-	include COMPARABLE with type t := t
-	include SERIALISABLE with type t := t
+  include COMPARABLE with type t := t
+  include SERIALISABLE with type t := t
+end
+
+(** A space of blocks in which the b-tree nodes are stored *)
+module type HEAP = sig
+  type t
+  type 'a io
+
+  val block_size: int
+
+  type block = int64
+
+  val allocate: unit -> block io
+end
+
+(** A b-tree *)
+module type TREE = sig
+  type t
+  type 'a io
+  type element
+
+  val insert: t -> element -> t io
+  val delete: t -> element -> t io
 end
