@@ -1,0 +1,33 @@
+opam-version: "1.2"
+name: "btree"
+maintainer: "dave@recoil.org"
+version: "0.0"
+authors: [ "David Scott" ]
+license: "ISC"
+homepage: "https://github.com/mirage/ocaml-btree"
+dev-repo: "https://github.com/mirage/ocaml-btree.git"
+bug-reports: "https://github.com/mirage/ocaml-btree/issues"
+
+build: [
+  ["./configure"]
+  [make]
+]
+
+build-test:[
+  ["./configure" "--enable-tests"]
+  [make "test"]
+]
+install: [make "install"]
+remove: ["ocamlfind" "remove" "btree"]
+
+depends: [
+  "base-bytes"
+  "cstruct"
+  "sexplib"
+  "result"
+  "mirage-types-lwt"
+  "lwt"
+  "ocamlfind" {build}
+  "alcotest" {test & >= "0.4.0"}
+]
+available: [ocaml-version >= "4.02.0"]
