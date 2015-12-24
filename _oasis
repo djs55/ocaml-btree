@@ -12,11 +12,11 @@ Library btree
   CompiledObject:     best
   Path:               lib
   Findlibname:        btree
-  Modules:            Btree, Btree_s
-  BuildDepends:       result, cstruct, sexplib, sexplib.syntax,
-                      mirage-types.lwt, lwt
+  Modules:            Btree, Heap, Btree_s
+  BuildDepends:       result, cstruct, cstruct.syntax, sexplib, sexplib.syntax,
+                      mirage-types.lwt, lwt, mirage-block
   XMETARequires:      result, cstruct, sexplib, sexplib,
-                      mirage-types.lwt, lwt
+                      mirage-types.lwt, lwt, mirage-block
 
 Document btree
   Title:                B-tree docs

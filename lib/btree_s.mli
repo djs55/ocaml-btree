@@ -45,7 +45,7 @@ module type HEAP = sig
   type t
   type 'a io
 
-  val block_size: int
+  val block_size: t -> int io
 
   type block = int64
 
