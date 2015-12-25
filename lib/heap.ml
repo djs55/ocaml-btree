@@ -83,7 +83,24 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
   let connect ~block () =
     (* read the root block *)
-    failwith "unimplemented: connect"
+    Underlying.get_info block
+    >>= fun info ->
+    let sector = alloc info.Underlying.sector_size in
+    Underlying.read block 0L [ sector ]
+    >>*= fun () ->
+    let magic' = Cstruct.to_string (get_root_block_magic sector) in
+    if magic <> magic'
+    then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected header magic, expected '%s' but read '%s'" magic magic')))
+    else begin
+      let version = get_root_block_version sector in
+      if version <> 0l
+      then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected header version, expected '%ld' but read '%ld'" 0l version)))
+      else begin
+        let high_water_mark = get_root_block_high_water_mark sector in
+        let free_list = get_root_block_free_list sector in
+        Lwt.return (`Ok { underlying = block; high_water_mark; free_list })
+      end
+    end
 
   let allocate ~t ~length () =
     (* if there are blocks above the high-water mark, grab those.

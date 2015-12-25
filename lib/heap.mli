@@ -34,7 +34,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   (** [format block] initialises the underlying block device. Some data will
       be lost, but the device won't be securely erased. *)
 
-  val connect: block:Block.t -> unit -> t Lwt.t
+  val connect: block:Underlying.t -> unit -> t error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
   val allocate: t:t -> length:int -> unit -> Block.t Lwt.t

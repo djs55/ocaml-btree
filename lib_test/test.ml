@@ -38,8 +38,24 @@ let heap_format () =
     Lwt.return () in
   Lwt_main.run t
 
+let heap_connect () =
+  let t =
+    Ramdisk.connect ~name:"heap"
+    >>= fun x ->
+    let from = expect_ok "Ramdisk.connect" x in
+    let module H = Heap.Make(Ramdisk) in
+    H.format ~block:from ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    H.connect ~block:from ()
+    >>= fun h ->
+    let _ = expect_ok_msg h in
+    Lwt.return () in
+  Lwt_main.run t
+
 let tests = [
   "heap_format" >:: heap_format;
+  "heap connect" >:: heap_connect;
 ]
 
 let _ =
