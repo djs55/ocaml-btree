@@ -33,7 +33,7 @@ Executable test_btree
   Custom:             true
   CompiledObject:     best
   Install:            false
-  BuildDepends:       btree, alcotest, ramdisk
+  BuildDepends:       btree, oUnit, mirage-block-ramdisk, lwt.unix, io-page.unix
 
 Test test_btree
   Run$:               flag(tests)

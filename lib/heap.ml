@@ -32,6 +32,17 @@ cstruct root_block {
    - they are reachable via the free_list
 *)
 
+type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
+let (>>*=) m f = m >>= function
+  | `Error e -> Lwt.return (`Error (`Msg (Mirage_block.Error.string_of_error e)))
+  | `Ok x -> f x
+
+let alloc size =
+  let npages = (size + 4095) / 4096 in
+  let pages = Io_page.get npages in
+  Cstruct.(sub (Io_page.to_cstruct pages) 0 size)
+
 module Make(Underlying: V1_LWT.BLOCK) = struct
 
   type t = {
@@ -59,7 +70,16 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
   let format ~block () =
     (* write a fresh root block *)
-    failwith "unimplemented: format"
+    Underlying.get_info block
+    >>= fun info ->
+    let sector = alloc info.Underlying.sector_size in
+    set_root_block_magic magic 0 sector;
+    set_root_block_version sector 0l;
+    set_root_block_high_water_mark sector 0L;
+    set_root_block_free_list sector 0L;
+    Underlying.write block 0L [ sector ]
+    >>*= fun () ->
+    Lwt.return (`Ok ())
 
   let connect ~block () =
     (* read the root block *)

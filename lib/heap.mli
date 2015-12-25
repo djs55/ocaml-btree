@@ -20,15 +20,17 @@
 This module allows clients to allocate and free blocks.
 *)
 
-module Make(Underylying: V1_LWT.BLOCK): sig
+type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
+module Make(Underlying: V1_LWT.BLOCK): sig
 
   type t
   (** A heap containing blocks *)
 
   module Block: V1_LWT.BLOCK
-  (** An allocated (i.e. non-free) block stored on the underying device *)
+  (** An allocated (i.e. non-free) block on the underying device *)
 
-  val format: block:Block.t -> unit -> unit Lwt.t
+  val format: block:Underlying.t -> unit -> unit error Lwt.t
   (** [format block] initialises the underlying block device. Some data will
       be lost, but the device won't be securely erased. *)
 
