@@ -37,7 +37,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> t error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
-  val allocate: t:t -> length:int -> unit -> Block.t Lwt.t
+  val allocate: t:t -> length:int64 -> unit -> Block.t error Lwt.t
   (** Allocate a block of length [length] and return it so it may be
       updated.
       FIXME: add this to a transaction somehow
