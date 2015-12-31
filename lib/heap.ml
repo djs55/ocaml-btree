@@ -148,7 +148,9 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   }
 
   module Block = struct
-    type t = unit
+    (* This could evolve into something like a device-mapper device, when we
+       start supporting non-contiguous blocks *)
+
     type id = unit
     type 'a io = 'a Lwt.t
     type error = Mirage_block.Error.error
@@ -158,14 +160,34 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       sector_size: int;
       size_sectors: int64;
     }
-    let get_info _ = failwith "get_info"
-    let disconnect _ = failwith "disconnect"
+    type t = {
+      underlying: Underlying.t;
+      h: Allocated_block.t;
+      info: info;
+      mutable connected: bool;
+    }
+    let get_info t = Lwt.return t.info
+    let disconnect t =
+      t.connected <- false;
+      Lwt.return ()
     let read _ _ _ = failwith "read"
     let write _ _ _ = failwith "write"
 
-    let create () = failwith "Block.create"
+    let create underlying h =
+      Underlying.get_info underlying
+      >>= fun info ->
+      let info = {
+        read_write = info.Underlying.read_write;
+        sector_size = info.Underlying.sector_size;
+        size_sectors = info.Underlying.size_sectors;
+      } in
+      Lwt.return {
+        underlying;
+        h;
+        info;
+        connected = true;
+      }
   end
-
 
   let format ~block () =
     (* write a fresh root block *)
@@ -199,7 +221,10 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Allocated_block.write ~block:t.underlying ~offset h
       >>= fun () ->
       (* return the allocated BLOCK *)
-      Lwt.return (Block.create ())
+      let open Lwt.Infix in
+      Block.create t.underlying h
+      >>= fun block ->
+      Lwt.return (`Ok block)
     end
 
   let deallocate ~block () =
