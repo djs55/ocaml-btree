@@ -69,7 +69,8 @@ let heap_allocate_deallocate () =
     >>= fun block ->
     let block = expect_ok_msg block in
     H.deallocate ~block:block ()
-    >>= fun () ->
+    >>= fun x ->
+    let () = expect_ok_msg x in
     Lwt.return () in
   Lwt_main.run t
 
