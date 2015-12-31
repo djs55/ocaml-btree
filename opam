@@ -9,12 +9,14 @@ dev-repo: "https://github.com/mirage/ocaml-btree.git"
 bug-reports: "https://github.com/mirage/ocaml-btree/issues"
 
 build: [
-  ["./configure"]
+  ["oasis" "setup"]
+  ["ocaml" "setup.ml" "-configure"]
   [make]
 ]
 
 build-test:[
-  ["./configure" "--enable-tests"]
+  ["oasis" "setup"]
+  ["ocaml" "setup.ml" "-configure" "--enable-tests"]
   [make "test"]
 ]
 install: [make "install"]
@@ -29,6 +31,7 @@ depends: [
   "lwt"
   "mirage-block"
   "ocamlfind" {build}
+  "oasis" {build}
   "ounit" {test}
 ]
 available: [ocaml-version >= "4.02.0"]

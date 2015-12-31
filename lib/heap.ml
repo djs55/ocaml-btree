@@ -96,15 +96,17 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     uint8_t magic[16];
     uint32_t version;
     uint64_t length;
+    uint8_t deleted;
   } as little_endian
 
   type t = {
     magic: string;
     version: int32;
     length: int64;
+    deleted: bool;
   } with sexp
 
-  let create length = { magic; version = 0l; length }
+  let create length = { magic; version = 0l; length; deleted = false }
 
   let read ~block ~offset =
     B.get_info block
@@ -116,7 +118,8 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     let magic = Cstruct.to_string (get_hdr_magic sector) in
     let version = get_hdr_version sector in
     let length = get_hdr_length sector in
-    Lwt.return (`Ok { magic; version; length })
+    let deleted = get_hdr_deleted sector = 1 in
+    Lwt.return (`Ok { magic; version; length; deleted })
 
   let write ~block ~offset t =
     B.get_info block
@@ -125,6 +128,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_magic t.magic 0 sector;
     set_hdr_version sector t.version;
     set_hdr_length sector t.length;
+    set_hdr_deleted sector (if t.deleted then 1 else 2);
     let open BlockError in
     B.write block 0L [ sector ]
     >>= fun () ->
@@ -141,14 +145,16 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   module Root_block = Root_block(Underlying)
   module Allocated_block = Allocated_block(Underlying)
 
-  type t = {
+  type t' = {
     underlying: Underlying.t;
     info: Underlying.info;
     mutable root_block: Root_block.t;
   }
 
   module Block = struct
-    type t = unit
+    (* This could evolve into something like a device-mapper device, when we
+       start supporting non-contiguous blocks *)
+
     type id = unit
     type 'a io = 'a Lwt.t
     type error = Mirage_block.Error.error
@@ -158,14 +164,38 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       sector_size: int;
       size_sectors: int64;
     }
-    let get_info _ = failwith "get_info"
-    let disconnect _ = failwith "disconnect"
+    type t = {
+      heap: t';
+      offset: int64;
+      h: Allocated_block.t;
+      info: info;
+      mutable connected: bool;
+    }
+    let get_info t = Lwt.return t.info
+    let disconnect t =
+      t.connected <- false;
+      Lwt.return ()
     let read _ _ _ = failwith "read"
     let write _ _ _ = failwith "write"
 
-    let create () = failwith "Block.create"
+    let create heap offset h =
+      Underlying.get_info heap.underlying
+      >>= fun info ->
+      let info = {
+        read_write = info.Underlying.read_write;
+        sector_size = info.Underlying.sector_size;
+        size_sectors = info.Underlying.size_sectors;
+      } in
+      Lwt.return {
+        heap;
+        offset;
+        h;
+        info;
+        connected = true;
+      }
   end
 
+  type t = t'
 
   let format ~block () =
     (* write a fresh root block *)
@@ -199,11 +229,28 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Allocated_block.write ~block:t.underlying ~offset h
       >>= fun () ->
       (* return the allocated BLOCK *)
-      Lwt.return (Block.create ())
+      let open Lwt.Infix in
+      Block.create t offset h
+      >>= fun block ->
+      Lwt.return (`Ok block)
     end
 
   let deallocate ~block () =
-    (* Add the blocks to the free list *)
-    failwith "unimplemented: deallocate"
-
+    let t = block.Block.heap in
+    (* Mark the block as deleted to help detect use-after-free bugs *)
+    let h = { block.Block.h with Allocated_block.deleted = true } in
+    let open Error in
+    Allocated_block.write ~block:t.underlying ~offset:block.Block.offset h
+    >>= fun () ->
+    (* If this block is the highest allocated block, then decrease the low
+       water mark *)
+    let sector_size = block.Block.info.Block.sector_size in
+    let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+    if Int64.(add block.Block.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
+      t.root_block <- { t.root_block with Root_block.high_water_mark = block.Block.offset };
+      Root_block.write ~block:t.underlying t.root_block
+    end else begin
+      (* Add the blocks to the free list *)
+      failwith "unimplemented: deallocate"
+    end
 end

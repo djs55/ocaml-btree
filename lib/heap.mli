@@ -43,7 +43,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
       FIXME: add this to a transaction somehow
   *)
 
-  val deallocate: block:Block.t -> unit -> unit Lwt.t
+  val deallocate: block:Block.t -> unit -> unit error Lwt.t
   (** Deallocate a block by adding it to the free list.
       FIXME: add this to a transaction somehow
   *)

@@ -53,9 +53,31 @@ let heap_connect () =
     Lwt.return () in
   Lwt_main.run t
 
+let heap_allocate_deallocate () =
+  let t =
+    Ramdisk.connect ~name:"heap"
+    >>= fun x ->
+    let from = expect_ok "Ramdisk.connect" x in
+    let module H = Heap.Make(Ramdisk) in
+    H.format ~block:from ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    H.connect ~block:from ()
+    >>= fun h ->
+    let h = expect_ok_msg h in
+    H.allocate ~t:h ~length:1L ()
+    >>= fun block ->
+    let block = expect_ok_msg block in
+    H.deallocate ~block:block ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    Lwt.return () in
+  Lwt_main.run t
+
 let tests = [
   "heap_format" >:: heap_format;
   "heap connect" >:: heap_connect;
+  "heap allocate-deallocate" >:: heap_allocate_deallocate;
 ]
 
 let _ =
