@@ -8,4 +8,4 @@ env:
   global:
     - PACKAGE="btree"
     - OCAML_VERSION=4.02
-    - COV_CONF="oasis setup && ./configure --enable-tests"
+    - COV_CONF="oasis setup && ocaml setup.ml -configure --enable-tests"
