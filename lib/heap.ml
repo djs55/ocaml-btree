@@ -137,7 +137,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     mutable root_block: Root_block.t;
   }
 
-  module Block = struct
+  module Bytes = struct
     (* This could evolve into something like a device-mapper device, when we
        start supporting non-contiguous blocks *)
 
@@ -203,6 +203,13 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
   type t = t'
 
+  type contents =
+    | Bytes of Bytes.t
+
+  type block = contents
+
+  let contents_of_block x = x
+
   let format ~block () =
     (* write a fresh root block *)
     Root_block.(write ~block (create ()))
@@ -236,27 +243,29 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       >>= fun () ->
       (* return the allocated BLOCK *)
       let open Lwt.Infix in
-      Block.create t offset h
-      >>= fun block ->
-      Lwt.return (`Ok block)
+      Bytes.create t offset h
+      >>= fun bytes ->
+      Lwt.return (`Ok (Bytes bytes))
     end
 
   let deallocate ~block () =
-    let t = block.Block.heap in
-    (* Mark the block as deleted to help detect use-after-free bugs *)
-    let h = { block.Block.h with Allocated_block.deleted = true } in
-    let open Error.Infix in
-    Allocated_block.write ~block:t.underlying ~offset:block.Block.offset h
-    >>= fun () ->
-    (* If this block is the highest allocated block, then decrease the low
-       water mark *)
-    let sector_size = block.Block.info.Block.sector_size in
-    let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
-    if Int64.(add block.Block.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
-      t.root_block <- { t.root_block with Root_block.high_water_mark = block.Block.offset };
-      Root_block.write ~block:t.underlying t.root_block
-    end else begin
-      (* Add the blocks to the free list *)
-      failwith "unimplemented: deallocate"
-    end
+    match block with
+    | Bytes block ->
+      let t = block.Bytes.heap in
+      (* Mark the block as deleted to help detect use-after-free bugs *)
+      let h = { block.Bytes.h with Allocated_block.deleted = true } in
+      let open Error.Infix in
+      Allocated_block.write ~block:t.underlying ~offset:block.Bytes.offset h
+      >>= fun () ->
+      (* If this block is the highest allocated block, then decrease the low
+         water mark *)
+      let sector_size = block.Bytes.info.Bytes.sector_size in
+      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+      if Int64.(add block.Bytes.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
+        t.root_block <- { t.root_block with Root_block.high_water_mark = block.Bytes.offset };
+        Root_block.write ~block:t.underlying t.root_block
+      end else begin
+        (* Add the blocks to the free list *)
+        failwith "unimplemented: deallocate"
+      end
 end

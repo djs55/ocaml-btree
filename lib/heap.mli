@@ -21,13 +21,23 @@
 *)
 open Error
 
+
 module Make(Underlying: V1_LWT.BLOCK): sig
 
   type t
   (** A heap containing blocks *)
 
-  module Block: V1_LWT.BLOCK
-  (** An allocated (i.e. non-free) block on the underying device *)
+  module Bytes: V1_LWT.BLOCK
+  (** Raw data on the underlying device *)
+
+  type contents =
+    | Bytes of Bytes.t
+    (** The contents of an allocated block *)
+
+  type block
+  (** An allocated block *)
+
+  val contents_of_block: block -> contents
 
   val format: block:Underlying.t -> unit -> unit error Lwt.t
   (** [format block] initialises the underlying block device. Some data will
@@ -36,13 +46,13 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> t error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
-  val allocate: t:t -> length:int64 -> unit -> Block.t error Lwt.t
+  val allocate: t:t -> length:int64 -> unit -> block error Lwt.t
   (** Allocate a block of length [length] and return it so it may be
       updated.
       FIXME: add this to a transaction somehow
   *)
 
-  val deallocate: block:Block.t -> unit -> unit error Lwt.t
+  val deallocate: block:block -> unit -> unit error Lwt.t
   (** Deallocate a block by adding it to the free list.
       FIXME: add this to a transaction somehow
   *)

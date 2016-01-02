@@ -90,25 +90,27 @@ let heap_write_read () =
     H.allocate ~t:h ~length:1L ()
     >>= fun block1 ->
     let block1 = expect_ok_msg block1 in
+    let bytes1 = match H.contents_of_block block1 with H.Bytes b -> b in
     H.allocate ~t:h ~length:1L ()
     >>= fun block2 ->
     let block2 = expect_ok_msg block2 in
+    let bytes2 = match H.contents_of_block block2 with H.Bytes b -> b in
     (* Fill block1 with random data *)
     Random.self_init();
-    Mirage_block.random (module H.Block) block1
+    Mirage_block.random (module H.Bytes) bytes1
     >>= fun x ->
     let () = expect_ok_msg x in
     (* block1 should be different to block2 *)
-    Mirage_block.compare (module H.Block) block1 (module H.Block) block2
+    Mirage_block.compare (module H.Bytes) bytes1 (module H.Bytes) bytes2
     >>= fun x ->
     let result = expect_ok_msg x in
     if result == 0 then failwith "blocks erroneously compared the same";
     (* Copy block1 to block2 *)
-    Mirage_block.copy (module H.Block) block1 (module H.Block) block2
+    Mirage_block.copy (module H.Bytes) bytes1 (module H.Bytes) bytes2
     >>= fun x ->
     let () = expect_ok_msg x in
     (* block1 should be the same as block2 *)
-    Mirage_block.compare (module H.Block) block1 (module H.Block) block2
+    Mirage_block.compare (module H.Bytes) bytes1 (module H.Bytes) bytes2
     >>= fun x ->
     let result = expect_ok_msg x in
     assert_equal ~printer:string_of_int 0 result;
