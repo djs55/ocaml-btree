@@ -203,10 +203,10 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
   type t = t'
 
-  type contents =
-    | Bytes of Bytes.t
+  type _ contents =
+    | Bytes: Bytes.t -> Bytes.t contents
 
-  type block = contents
+  type 'a block = 'a contents
 
   let contents_of_block x = x
 
