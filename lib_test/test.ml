@@ -74,10 +74,59 @@ let heap_allocate_deallocate () =
     Lwt.return () in
   Lwt_main.run t
 
+let heap_write_read () =
+  let t =
+    Ramdisk.connect ~name:"heap"
+    >>= fun x ->
+    let from = expect_ok "Ramdisk.connect" x in
+    let module H = Heap.Make(Ramdisk) in
+    H.format ~block:from ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    H.connect ~block:from ()
+    >>= fun h ->
+    let h = expect_ok_msg h in
+    (* Allocate 2 blocks *)
+    H.allocate ~t:h ~length:1L ()
+    >>= fun block1 ->
+    let block1 = expect_ok_msg block1 in
+    H.allocate ~t:h ~length:1L ()
+    >>= fun block2 ->
+    let block2 = expect_ok_msg block2 in
+    (* Fill block1 with random data *)
+    Random.self_init();
+    Mirage_block.random (module H.Block) block1
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    (* block1 should be different to block2 *)
+    Mirage_block.compare (module H.Block) block1 (module H.Block) block2
+    >>= fun x ->
+    let result = expect_ok_msg x in
+    if result == 0 then failwith "blocks erroneously compared the same";
+    (* Copy block1 to block2 *)
+    Mirage_block.copy (module H.Block) block1 (module H.Block) block2
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    (* block1 should be the same as block2 *)
+    Mirage_block.compare (module H.Block) block1 (module H.Block) block2
+    >>= fun x ->
+    let result = expect_ok_msg x in
+    assert_equal ~printer:string_of_int 0 result;
+    (* Deallocate in the "easy" order to not use the GC codepath *)
+    H.deallocate ~block:block2 ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    H.deallocate ~block:block1 ()
+    >>= fun x ->
+    let () = expect_ok_msg x in
+    Lwt.return () in
+  Lwt_main.run t
+
 let tests = [
   "heap_format" >:: heap_format;
   "heap connect" >:: heap_connect;
   "heap allocate-deallocate" >:: heap_allocate_deallocate;
+  "heap write then read back" >:: heap_write_read;
 ]
 
 let _ =

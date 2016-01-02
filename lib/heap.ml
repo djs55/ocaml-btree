@@ -175,16 +175,36 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     let disconnect t =
       t.connected <- false;
       Lwt.return ()
-    let read _ _ _ = failwith "read"
-    let write _ _ _ = failwith "write"
+
+    let check_bounds t ofs bufs =
+      let length = List.fold_left (fun acc x -> acc + (Cstruct.len x)) 0 bufs in
+      let length_sectors = (length + t.info.sector_size - 1) / t.info.sector_size in
+      if Int64.(add ofs (of_int length_sectors)) > t.info.size_sectors
+      then Lwt.return (`Error (`Unknown (Printf.sprintf "I/O out of bounds: ofs=%Ld length_sectors=%d size_sectors=%Ld" ofs length_sectors t.info.size_sectors)))
+      else Lwt.return (`Ok ())
+
+    let read t ofs bufs =
+      let open Error in
+      check_bounds t ofs bufs
+      >>= fun () ->
+      (* Data follows the header sector *)
+      Underlying.read t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
+
+    let write t ofs bufs =
+      let open Error in
+      check_bounds t ofs bufs
+      >>= fun () ->
+      (* Data follows the header sector *)
+      Underlying.write t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
 
     let create heap offset h =
       Underlying.get_info heap.underlying
       >>= fun info ->
+      let size_sectors = Int64.(div (pred (add h.Allocated_block.length (of_int info.Underlying.sector_size))) (of_int info.Underlying.sector_size)) in
       let info = {
         read_write = info.Underlying.read_write;
         sector_size = info.Underlying.sector_size;
-        size_sectors = info.Underlying.size_sectors;
+        size_sectors = size_sectors;
       } in
       Lwt.return {
         heap;
