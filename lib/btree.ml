@@ -16,7 +16,6 @@
  *)
 
 module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
-  type 'a io = 'a Lwt.t
   type element = E.t
 
   type t = unit

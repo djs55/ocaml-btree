@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+open Error
 
 module type COMPARABLE = sig
   type t
@@ -55,13 +56,12 @@ end
 (** A b-tree *)
 module type TREE = sig
   type t
-  type 'a io
   type element
   type block
 
-  val create: block -> t io
-  val connect: block -> t io
+  val create: block -> t error Lwt.t
+  val connect: block -> t error Lwt.t
 
-  val insert: t -> element -> t io
-  val delete: t -> element -> t io
+  val insert: t -> element -> t error Lwt.t
+  val delete: t -> element -> t error Lwt.t
 end
