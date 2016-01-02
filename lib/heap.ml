@@ -175,8 +175,13 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     let disconnect t =
       t.connected <- false;
       Lwt.return ()
-    let read _ _ _ = failwith "read"
-    let write _ _ _ = failwith "write"
+
+    let read t ofs bufs =
+      (* Data follows the header sector *)
+      Underlying.read t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
+    let write t ofs bufs =
+      (* Data follows the header sector *)
+      Underlying.write t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
 
     let create heap offset h =
       Underlying.get_info heap.underlying
