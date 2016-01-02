@@ -42,11 +42,11 @@ module Root_block(B: V1_LWT.BLOCK) = struct
 
   (* The first sector will contain a "root block" *)
   cstruct hdr {
-    uint8_t magic[16];
-    uint32_t version;
-    uint64_t high_water_mark;
-    uint64_t free_list;
-  } as little_endian
+      uint8_t magic[16];
+      uint32_t version;
+      uint64_t high_water_mark;
+      uint64_t free_list;
+    } as little_endian
 
   type t = {
     magic: string;
@@ -93,11 +93,11 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
   let magic = "MIRAGEBLOCK\089\060\224\199\110"
 
   cstruct hdr {
-    uint8_t magic[16];
-    uint32_t version;
-    uint64_t length;
-    uint8_t deleted;
-  } as little_endian
+      uint8_t magic[16];
+      uint32_t version;
+      uint64_t length;
+      uint8_t deleted;
+    } as little_endian
 
   type t = {
     magic: string;

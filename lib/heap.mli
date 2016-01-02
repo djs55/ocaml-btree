@@ -17,7 +17,7 @@
 
 (** A heap over a raw block device.
 
-This module allows clients to allocate and free blocks.
+    This module allows clients to allocate and free blocks.
 *)
 
 type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
