@@ -122,11 +122,24 @@ let heap_write_read () =
     Lwt.return () in
   Lwt_main.run t
 
+let tree_create () =
+  let t =
+    Ramdisk.connect ~name:"heap"
+    >>= fun x ->
+    let block = expect_ok "Ramdisk.connect" x in
+    let module T = Btree.Make(Ramdisk)(StringElement) in
+    T.create block
+    >>= fun t ->
+    let _ = expect_ok "T.create" t in
+    Lwt.return () in
+  Lwt_main.run t
+
 let tests = [
   "heap_format" >:: heap_format;
   "heap connect" >:: heap_connect;
   "heap allocate-deallocate" >:: heap_allocate_deallocate;
   "heap write then read back" >:: heap_write_read;
+  "tree create" >:: tree_create;
 ]
 
 let _ =

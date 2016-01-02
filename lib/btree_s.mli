@@ -25,9 +25,7 @@ end
 module type SERIALISABLE = sig
   type t
 
-  type 'a error = ('a, [ `Msg of string]) Result.result
-
-  val size: int
+  val size: t -> int
 
   val marshal: t -> Cstruct.t -> Cstruct.t error
   val unmarshal: Cstruct.t -> (t * Cstruct.t) error
