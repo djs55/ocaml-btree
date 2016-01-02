@@ -181,10 +181,11 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     let create heap offset h =
       Underlying.get_info heap.underlying
       >>= fun info ->
+      let size_sectors = Int64.(div (pred (add h.Allocated_block.length (of_int info.Underlying.sector_size))) (of_int info.Underlying.sector_size)) in
       let info = {
         read_write = info.Underlying.read_write;
         sector_size = info.Underlying.sector_size;
-        size_sectors = info.Underlying.size_sectors;
+        size_sectors = size_sectors;
       } in
       Lwt.return {
         heap;
