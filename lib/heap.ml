@@ -176,10 +176,24 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       t.connected <- false;
       Lwt.return ()
 
+    let check_bounds t ofs bufs =
+      let length = List.fold_left (fun acc x -> acc + (Cstruct.len x)) 0 bufs in
+      let length_sectors = (length + t.info.sector_size - 1) / t.info.sector_size in
+      if Int64.(add ofs (of_int length_sectors)) > t.info.size_sectors
+      then Lwt.return (`Error (`Unknown (Printf.sprintf "I/O out of bounds: ofs=%Ld length_sectors=%d size_sectors=%Ld" ofs length_sectors t.info.size_sectors)))
+      else Lwt.return (`Ok ())
+
     let read t ofs bufs =
+      let open Error in
+      check_bounds t ofs bufs
+      >>= fun () ->
       (* Data follows the header sector *)
       Underlying.read t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
+
     let write t ofs bufs =
+      let open Error in
+      check_bounds t ofs bufs
+      >>= fun () ->
       (* Data follows the header sector *)
       Underlying.write t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
 
