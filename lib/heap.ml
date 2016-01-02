@@ -17,20 +17,6 @@
 open Sexplib.Std
 open Lwt.Infix
 
-type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
-
-module BlockError = struct
-  let (>>=) m f = m >>= function
-    | `Error e -> Lwt.return (`Error (`Msg (Mirage_block.Error.string_of_error e)))
-    | `Ok x -> f x
-end
-
-module Error = struct
-  let (>>=) m f = m >>= function
-    | `Error e -> Lwt.return (`Error e)
-    | `Ok x -> f x
-end
-
 let alloc size =
   let npages = (size + 4095) / 4096 in
   let pages = Io_page.get npages in
@@ -61,7 +47,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     B.get_info block
     >>= fun info ->
     let sector = alloc info.B.sector_size in
-    let open BlockError in
+    let open Error.FromBlock in
     B.read block 0L [ sector ]
     >>= fun () ->
     let magic' = Cstruct.to_string (get_hdr_magic sector) in
@@ -83,7 +69,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     set_hdr_version sector t.version;
     set_hdr_high_water_mark sector t.high_water_mark;
     set_hdr_free_list sector t.free_list;
-    let open BlockError in
+    let open Error.FromBlock in
     B.write block 0L [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
@@ -112,7 +98,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     B.get_info block
     >>= fun info ->
     let sector = alloc info.B.sector_size in
-    let open BlockError in
+    let open Error.FromBlock in
     B.read block offset [ sector ]
     >>= fun () ->
     let magic = Cstruct.to_string (get_hdr_magic sector) in
@@ -129,7 +115,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_version sector t.version;
     set_hdr_length sector t.length;
     set_hdr_deleted sector (if t.deleted then 1 else 2);
-    let open BlockError in
+    let open Error.FromBlock in
     B.write block 0L [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
@@ -184,14 +170,14 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       else Lwt.return (`Ok ())
 
     let read t ofs bufs =
-      let open Error in
+      let open Error.Infix in
       check_bounds t ofs bufs
       >>= fun () ->
       (* Data follows the header sector *)
       Underlying.read t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
 
     let write t ofs bufs =
-      let open Error in
+      let open Error.Infix in
       check_bounds t ofs bufs
       >>= fun () ->
       (* Data follows the header sector *)
@@ -224,7 +210,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   let connect ~block () =
     Underlying.get_info block
     >>= fun info ->
-    let open Error in
+    let open Error.Infix in
     (* read the root block *)
     Root_block.read ~block
     >>= fun root_block ->
@@ -241,7 +227,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       let offset = t.root_block.Root_block.high_water_mark in
       (* bump the high_water_mark *)
       t.root_block <- { t.root_block with Root_block.high_water_mark = Int64.(add t.root_block.Root_block.high_water_mark (of_int sectors_required)) };
-      let open Error in
+      let open Error.Infix in
       Root_block.write ~block:t.underlying t.root_block
       >>= fun () ->
       (* write an allocation header *)
@@ -259,7 +245,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     let t = block.Block.heap in
     (* Mark the block as deleted to help detect use-after-free bugs *)
     let h = { block.Block.h with Allocated_block.deleted = true } in
-    let open Error in
+    let open Error.Infix in
     Allocated_block.write ~block:t.underlying ~offset:block.Block.offset h
     >>= fun () ->
     (* If this block is the highest allocated block, then decrease the low

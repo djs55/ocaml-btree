@@ -19,8 +19,7 @@
 
     This module allows clients to allocate and free blocks.
 *)
-
-type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+open Error
 
 module Make(Underlying: V1_LWT.BLOCK): sig
 
