@@ -57,6 +57,10 @@ module type TREE = sig
   type t
   type 'a io
   type element
+  type block
+
+  val create: block -> t io
+  val connect: block -> t io
 
   val insert: t -> element -> t io
   val delete: t -> element -> t io

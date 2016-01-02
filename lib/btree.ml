@@ -20,6 +20,10 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
   type element = E.t
 
   type t = unit
+  type block = B.t
+
+  let create block = failwith "create"
+  let connect block = failwith "connect"
 
   let insert _ _ = failwith "insert"
   let delete _ _ = failwith "delete"

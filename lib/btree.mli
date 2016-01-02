@@ -18,3 +18,4 @@
 module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT): Btree_s.TREE
   with type 'a io = 'a Lwt.t
    and type element = E.t
+   and type block = B.t
