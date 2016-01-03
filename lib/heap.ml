@@ -85,6 +85,12 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
       uint8_t deleted;
     } as little_endian
 
+
+  type tag = [
+    | `Bytes (* block contains raw data *)
+    | `Refs (* block contains an array of references to blocks *)
+  ]
+
   type t = {
     magic: string;
     version: int32;
