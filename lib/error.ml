@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2015 David Scott <dave.scott@unikernel.com>
+ * Copyright (C) 2016 David Scott <dave.scott@unikernel.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,18 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  *)
+open Lwt.Infix
 
-module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT): Btree_s.TREE
-  with type element = E.t
-   and type block = B.t
+type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
+module FromBlock = struct
+  let (>>=) m f = m >>= function
+    | `Error e -> Lwt.return (`Error (`Msg (Mirage_block.Error.string_of_error e)))
+    | `Ok x -> f x
+end
+
+module Infix = struct
+  let (>>=) m f = m >>= function
+    | `Error e -> Lwt.return (`Error e)
+    | `Ok x -> f x
+end

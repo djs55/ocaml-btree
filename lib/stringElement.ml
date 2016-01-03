@@ -15,6 +15,21 @@
  *
  *)
 
-module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT): Btree_s.TREE
-  with type element = E.t
-   and type block = B.t
+type t = string
+
+let compare (a: t) (b: t) = compare a b
+
+let size t = String.length t
+
+let marshal t buf =
+  let t' = size t in
+  let buf' = Cstruct.len buf in
+  if t' > buf'
+  then `Error (`Msg (Printf.sprintf "Cannot marshal string of length %d into buffer of length %d" t' buf'))
+  else begin
+    Cstruct.blit_from_string t 0 buf 0 t';
+    `Ok (Cstruct.shift buf t')
+  end
+
+let unmarshal buf =
+  `Error (`Msg "unmarshal unimplemented")

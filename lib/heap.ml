@@ -17,20 +17,6 @@
 open Sexplib.Std
 open Lwt.Infix
 
-type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
-
-module BlockError = struct
-  let (>>=) m f = m >>= function
-    | `Error e -> Lwt.return (`Error (`Msg (Mirage_block.Error.string_of_error e)))
-    | `Ok x -> f x
-end
-
-module Error = struct
-  let (>>=) m f = m >>= function
-    | `Error e -> Lwt.return (`Error e)
-    | `Ok x -> f x
-end
-
 let alloc size =
   let npages = (size + 4095) / 4096 in
   let pages = Io_page.get npages in
@@ -42,11 +28,11 @@ module Root_block(B: V1_LWT.BLOCK) = struct
 
   (* The first sector will contain a "root block" *)
   cstruct hdr {
-    uint8_t magic[16];
-    uint32_t version;
-    uint64_t high_water_mark;
-    uint64_t free_list;
-  } as little_endian
+      uint8_t magic[16];
+      uint32_t version;
+      uint64_t high_water_mark;
+      uint64_t free_list;
+    } as little_endian
 
   type t = {
     magic: string;
@@ -61,7 +47,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     B.get_info block
     >>= fun info ->
     let sector = alloc info.B.sector_size in
-    let open BlockError in
+    let open Error.FromBlock in
     B.read block 0L [ sector ]
     >>= fun () ->
     let magic' = Cstruct.to_string (get_hdr_magic sector) in
@@ -83,7 +69,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     set_hdr_version sector t.version;
     set_hdr_high_water_mark sector t.high_water_mark;
     set_hdr_free_list sector t.free_list;
-    let open BlockError in
+    let open Error.FromBlock in
     B.write block 0L [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
@@ -93,11 +79,17 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
   let magic = "MIRAGEBLOCK\089\060\224\199\110"
 
   cstruct hdr {
-    uint8_t magic[16];
-    uint32_t version;
-    uint64_t length;
-    uint8_t deleted;
-  } as little_endian
+      uint8_t magic[16];
+      uint32_t version;
+      uint64_t length;
+      uint8_t deleted;
+    } as little_endian
+
+
+  type tag = [
+    | `Bytes (* block contains raw data *)
+    | `Refs (* block contains an array of references to blocks *)
+  ]
 
   type t = {
     magic: string;
@@ -112,7 +104,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     B.get_info block
     >>= fun info ->
     let sector = alloc info.B.sector_size in
-    let open BlockError in
+    let open Error.FromBlock in
     B.read block offset [ sector ]
     >>= fun () ->
     let magic = Cstruct.to_string (get_hdr_magic sector) in
@@ -129,7 +121,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_version sector t.version;
     set_hdr_length sector t.length;
     set_hdr_deleted sector (if t.deleted then 1 else 2);
-    let open BlockError in
+    let open Error.FromBlock in
     B.write block 0L [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
@@ -151,7 +143,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     mutable root_block: Root_block.t;
   }
 
-  module Block = struct
+  module Bytes = struct
     (* This could evolve into something like a device-mapper device, when we
        start supporting non-contiguous blocks *)
 
@@ -184,14 +176,14 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       else Lwt.return (`Ok ())
 
     let read t ofs bufs =
-      let open Error in
+      let open Error.Infix in
       check_bounds t ofs bufs
       >>= fun () ->
       (* Data follows the header sector *)
       Underlying.read t.heap.underlying (Int64.(add (add ofs t.offset) 1L)) bufs
 
     let write t ofs bufs =
-      let open Error in
+      let open Error.Infix in
       check_bounds t ofs bufs
       >>= fun () ->
       (* Data follows the header sector *)
@@ -215,7 +207,19 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       }
   end
 
+  module Refs = struct
+    type t = unit
+  end
+
   type t = t'
+
+  type _ contents =
+    | Bytes: Bytes.t -> Bytes.t contents
+    | Refs: Refs.t -> Refs.t contents
+
+  type 'a block = 'a contents
+
+  let contents_of_block x = x
 
   let format ~block () =
     (* write a fresh root block *)
@@ -224,7 +228,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   let connect ~block () =
     Underlying.get_info block
     >>= fun info ->
-    let open Error in
+    let open Error.Infix in
     (* read the root block *)
     Root_block.read ~block
     >>= fun root_block ->
@@ -241,7 +245,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       let offset = t.root_block.Root_block.high_water_mark in
       (* bump the high_water_mark *)
       t.root_block <- { t.root_block with Root_block.high_water_mark = Int64.(add t.root_block.Root_block.high_water_mark (of_int sectors_required)) };
-      let open Error in
+      let open Error.Infix in
       Root_block.write ~block:t.underlying t.root_block
       >>= fun () ->
       (* write an allocation header *)
@@ -250,27 +254,29 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       >>= fun () ->
       (* return the allocated BLOCK *)
       let open Lwt.Infix in
-      Block.create t offset h
-      >>= fun block ->
-      Lwt.return (`Ok block)
+      Bytes.create t offset h
+      >>= fun bytes ->
+      Lwt.return (`Ok (Bytes bytes))
     end
 
   let deallocate ~block () =
-    let t = block.Block.heap in
-    (* Mark the block as deleted to help detect use-after-free bugs *)
-    let h = { block.Block.h with Allocated_block.deleted = true } in
-    let open Error in
-    Allocated_block.write ~block:t.underlying ~offset:block.Block.offset h
-    >>= fun () ->
-    (* If this block is the highest allocated block, then decrease the low
-       water mark *)
-    let sector_size = block.Block.info.Block.sector_size in
-    let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
-    if Int64.(add block.Block.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
-      t.root_block <- { t.root_block with Root_block.high_water_mark = block.Block.offset };
-      Root_block.write ~block:t.underlying t.root_block
-    end else begin
-      (* Add the blocks to the free list *)
-      failwith "unimplemented: deallocate"
-    end
+    match block with
+    | Bytes block ->
+      let t = block.Bytes.heap in
+      (* Mark the block as deleted to help detect use-after-free bugs *)
+      let h = { block.Bytes.h with Allocated_block.deleted = true } in
+      let open Error.Infix in
+      Allocated_block.write ~block:t.underlying ~offset:block.Bytes.offset h
+      >>= fun () ->
+      (* If this block is the highest allocated block, then decrease the low
+         water mark *)
+      let sector_size = block.Bytes.info.Bytes.sector_size in
+      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+      if Int64.(add block.Bytes.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
+        t.root_block <- { t.root_block with Root_block.high_water_mark = block.Bytes.offset };
+        Root_block.write ~block:t.underlying t.root_block
+      end else begin
+        (* Add the blocks to the free list *)
+        failwith "unimplemented: deallocate"
+      end
 end

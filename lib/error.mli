@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2015 David Scott <dave.scott@unikernel.com>
+ * Copyright (C) 2016 David Scott <dave.scott@unikernel.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,6 +15,16 @@
  *
  *)
 
-module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT): Btree_s.TREE
-  with type element = E.t
-   and type block = B.t
+type 'a error = [ `Ok of 'a | `Error of [ `Msg of string ] ]
+
+module FromBlock: sig
+  val ( >>= ): [< `Error of Mirage_block.Error.error | `Ok of 'a ] Lwt.t
+    -> ('a -> ([> `Error of [> `Msg of bytes ] ] as 'b) Lwt.t)
+    -> 'b Lwt.t
+end
+
+module Infix: sig
+  val ( >>= ) : [< `Error of 'a | `Ok of 'b ] Lwt.t
+    -> ('b -> ([> `Error of 'a ] as 'c) Lwt.t)
+    -> 'c Lwt.t 
+end

@@ -16,10 +16,26 @@
  *)
 
 module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
-  type 'a io = 'a Lwt.t
   type element = E.t
 
-  type t = unit
+  module Heap = Heap.Make(B)
+
+  type t = {
+    heap: Heap.t;
+  }
+  type block = B.t
+
+  let connect block =
+    let open Error.Infix in
+    Heap.connect ~block ()
+    >>= fun heap ->
+    Lwt.return (`Ok { heap })
+
+  let create block =
+    let open Error.Infix in
+    Heap.format ~block ()
+    >>= fun () ->
+    connect block
 
   let insert _ _ = failwith "insert"
   let delete _ _ = failwith "delete"

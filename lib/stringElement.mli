@@ -15,6 +15,5 @@
  *
  *)
 
-module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT): Btree_s.TREE
-  with type element = E.t
-   and type block = B.t
+include Btree_s.ELEMENT
+  with type t = string
