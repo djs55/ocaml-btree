@@ -201,10 +201,15 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       }
   end
 
+  module Refs = struct
+    type t = unit
+  end
+
   type t = t'
 
   type _ contents =
     | Bytes: Bytes.t -> Bytes.t contents
+    | Refs: Refs.t -> Refs.t contents
 
   type 'a block = 'a contents
 

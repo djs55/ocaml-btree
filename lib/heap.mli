@@ -30,8 +30,14 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   module Bytes: V1_LWT.BLOCK
   (** Raw data on the underlying device *)
 
+  module Refs: sig
+    type t
+  end
+  (** An array of optional references to other blocks *)
+
   type _ contents =
     | Bytes: Bytes.t -> Bytes.t contents
+    | Refs: Refs.t -> Refs.t contents
     (** The contents of an allocated block *)
 
   type 'a block
