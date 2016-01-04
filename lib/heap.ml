@@ -278,18 +278,27 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   type reference = unit
 
   module Refs = struct
-    type t = unit
+    type t = {
+      heap: heap;
+      offset: int64;
+      h: Allocated_block.t;
+    }
 
     let allocate ~heap ~length () =
       let open Error.Infix in
       (* Each reference is a 64-bit integer *)
-      let length = Int64.(mul 8L (of_int length)) in
-      allocate ~heap ~length ~tag:`Refs ()
+      let length_bytes = Int64.(mul 8L (of_int length)) in
+      allocate ~heap ~length:length_bytes ~tag:`Refs ()
       >>= fun (offset, h) ->
-      Lwt.return (`Error (`Msg "Refs.allocate unimplemented"))
+      let data = Cstruct.create (Int64.to_int length_bytes) in
+      Cstruct.memset data 0;
+      let open Error.FromBlock in
+      Underlying.write heap.underlying (Int64.(add offset 1L)) [ data ]
+      >>= fun () ->
+      Lwt.return (`Ok { heap; offset; h })
 
     let deallocate ~t () =
-      Lwt.return (`Error (`Msg "Refs.deallocate unimplemented"))
+      deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
 
     let get t =
       Lwt.return (`Error (`Msg "Refs.get unimplemented"))
