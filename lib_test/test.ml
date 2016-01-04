@@ -65,10 +65,10 @@ let heap_allocate_deallocate () =
     H.connect ~block:from ()
     >>= fun h ->
     let h = expect_ok_msg h in
-    H.allocate ~t:h ~length:1L ()
+    H.Bytes.allocate ~heap:h ~length:1L ()
     >>= fun block ->
     let block = expect_ok_msg block in
-    H.deallocate ~block:block ()
+    H.Bytes.deallocate ~t:block ()
     >>= fun x ->
     let () = expect_ok_msg x in
     Lwt.return () in
@@ -87,14 +87,12 @@ let heap_write_read () =
     >>= fun h ->
     let h = expect_ok_msg h in
     (* Allocate 2 blocks *)
-    H.allocate ~t:h ~length:1L ()
+    H.Bytes.allocate ~heap:h ~length:1L ()
     >>= fun block1 ->
-    let block1 = expect_ok_msg block1 in
-    let bytes1 = match H.contents_of_block block1 with H.Bytes b -> b in
-    H.allocate ~t:h ~length:1L ()
+    let bytes1 = expect_ok_msg block1 in
+    H.Bytes.allocate ~heap:h ~length:1L ()
     >>= fun block2 ->
-    let block2 = expect_ok_msg block2 in
-    let bytes2 = match H.contents_of_block block2 with H.Bytes b -> b in
+    let bytes2 = expect_ok_msg block2 in
     (* Fill block1 with random data *)
     Random.self_init();
     Mirage_block.random (module H.Bytes) bytes1
@@ -115,10 +113,10 @@ let heap_write_read () =
     let result = expect_ok_msg x in
     assert_equal ~printer:string_of_int 0 result;
     (* Deallocate in the "easy" order to not use the GC codepath *)
-    H.deallocate ~block:block2 ()
+    H.Bytes.deallocate ~t:bytes2 ()
     >>= fun x ->
     let () = expect_ok_msg x in
-    H.deallocate ~block:block1 ()
+    H.Bytes.deallocate ~t:bytes1 ()
     >>= fun x ->
     let () = expect_ok_msg x in
     Lwt.return () in

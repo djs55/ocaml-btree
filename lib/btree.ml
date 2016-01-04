@@ -21,7 +21,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
   module Heap = Heap.Make(B)
 
   type t = {
-    heap: Heap.t;
+    heap: Heap.heap;
   }
   type block = B.t
 

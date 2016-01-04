@@ -137,11 +137,50 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
   module Root_block = Root_block(Underlying)
   module Allocated_block = Allocated_block(Underlying)
 
-  type t' = {
+  type heap = {
     underlying: Underlying.t;
     info: Underlying.info;
     mutable root_block: Root_block.t;
   }
+
+  let allocate ~heap ~length () =
+    (* if there are blocks above the high-water mark, grab those.
+       otherwise trigger a compaction *)
+    let sectors_required = (Int64.to_int length + heap.info.sector_size - 1) / heap.info.sector_size + 1 in
+
+    if heap.root_block.Root_block.high_water_mark > heap.info.Underlying.size_sectors then begin
+      failwith "unimplemented: garbage collection"
+    end else begin
+      let offset = heap.root_block.Root_block.high_water_mark in
+      (* bump the high_water_mark *)
+      heap.root_block <- { heap.root_block with Root_block.high_water_mark = Int64.(add heap.root_block.Root_block.high_water_mark (of_int sectors_required)) };
+      let open Error.Infix in
+      Root_block.write ~block:heap.underlying heap.root_block
+      >>= fun () ->
+      (* write an allocation header *)
+      let h = Allocated_block.create length in
+      Allocated_block.write ~block:heap.underlying ~offset h
+      >>= fun () ->
+      Lwt.return (`Ok (offset, h))
+    end
+
+    let deallocate ~heap ~offset ~h () =
+      (* Mark the block as deleted to help detect use-after-free bugs *)
+      let h = { h with Allocated_block.deleted = true } in
+      let open Error.Infix in
+      Allocated_block.write ~block:heap.underlying ~offset h
+      >>= fun () ->
+      (* If this block is the highest allocated block, then decrease the low
+         water mark *)
+      let sector_size = heap.info.sector_size in
+      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+      if Int64.(add offset (of_int length_sectors)) = heap.root_block.Root_block.high_water_mark then begin
+        heap.root_block <- { heap.root_block with Root_block.high_water_mark = offset };
+        Root_block.write ~block:heap.underlying heap.root_block
+      end else begin
+        (* Add the blocks to the free list *)
+        failwith "unimplemented: deallocate"
+      end
 
   module Bytes = struct
     (* This could evolve into something like a device-mapper device, when we
@@ -157,7 +196,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       size_sectors: int64;
     }
     type t = {
-      heap: t';
+      heap: heap;
       offset: int64;
       h: Allocated_block.t;
       info: info;
@@ -205,19 +244,49 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
         info;
         connected = true;
       }
+
+    let allocate ~heap ~length () =
+      let open Error.Infix in
+      allocate ~heap ~length ()
+      >>= fun (offset, h) ->
+      (* return the allocated BLOCK *)
+      let open Lwt.Infix in
+      create heap offset h
+      >>= fun bytes ->
+      Lwt.return (`Ok bytes)
+
+    let deallocate ~t () =
+      deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
   end
+
+  type reference = unit
 
   module Refs = struct
     type t = unit
+
+    let allocate ~heap ~length () =
+      let open Error.Infix in
+      (* Each reference is a 64-bit integer *)
+      let length = Int64.(mul 8L (of_int length)) in
+      allocate ~heap ~length ()
+      >>= fun (offset, h) ->
+      Lwt.return (`Error (`Msg "Refs.allocate unimplemented"))
+
+    let deallocate ~t () =
+      Lwt.return (`Error (`Msg "Refs.deallocate unimplemented"))
+
+    let get t =
+      Lwt.return (`Error (`Msg "Refs.get unimplemented"))
+
+    let set t rfs =
+      Lwt.return (`Error (`Msg "Refs.set unimplemented"))
   end
 
-  type t = t'
+  type contents =
+    | Bytes of Bytes.t
+    | Refs of Refs.t
 
-  type _ contents =
-    | Bytes: Bytes.t -> Bytes.t contents
-    | Refs: Refs.t -> Refs.t contents
-
-  type 'a block = 'a contents
+  type block = contents
 
   let contents_of_block x = x
 
@@ -234,49 +303,5 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     >>= fun root_block ->
     Lwt.return (`Ok { underlying = block; info; root_block })
 
-  let allocate ~t ~length () =
-    (* if there are blocks above the high-water mark, grab those.
-       otherwise trigger a compaction *)
-    let sectors_required = (Int64.to_int length + t.info.Underlying.sector_size - 1) / t.info.Underlying.sector_size + 1 in
 
-    if t.root_block.Root_block.high_water_mark > t.info.Underlying.size_sectors then begin
-      failwith "unimplemented: garbage collection"
-    end else begin
-      let offset = t.root_block.Root_block.high_water_mark in
-      (* bump the high_water_mark *)
-      t.root_block <- { t.root_block with Root_block.high_water_mark = Int64.(add t.root_block.Root_block.high_water_mark (of_int sectors_required)) };
-      let open Error.Infix in
-      Root_block.write ~block:t.underlying t.root_block
-      >>= fun () ->
-      (* write an allocation header *)
-      let h = Allocated_block.create length in
-      Allocated_block.write ~block:t.underlying ~offset h
-      >>= fun () ->
-      (* return the allocated BLOCK *)
-      let open Lwt.Infix in
-      Bytes.create t offset h
-      >>= fun bytes ->
-      Lwt.return (`Ok (Bytes bytes))
-    end
-
-  let deallocate ~block () =
-    match block with
-    | Bytes block ->
-      let t = block.Bytes.heap in
-      (* Mark the block as deleted to help detect use-after-free bugs *)
-      let h = { block.Bytes.h with Allocated_block.deleted = true } in
-      let open Error.Infix in
-      Allocated_block.write ~block:t.underlying ~offset:block.Bytes.offset h
-      >>= fun () ->
-      (* If this block is the highest allocated block, then decrease the low
-         water mark *)
-      let sector_size = block.Bytes.info.Bytes.sector_size in
-      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
-      if Int64.(add block.Bytes.offset (of_int length_sectors)) = t.root_block.Root_block.high_water_mark then begin
-        t.root_block <- { t.root_block with Root_block.high_water_mark = block.Bytes.offset };
-        Root_block.write ~block:t.underlying t.root_block
-      end else begin
-        (* Add the blocks to the free list *)
-        failwith "unimplemented: deallocate"
-      end
 end
