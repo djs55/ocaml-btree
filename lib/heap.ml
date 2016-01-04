@@ -83,22 +83,33 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
       uint32_t version;
       uint64_t length;
       uint8_t deleted;
+      uint8_t tag;
     } as little_endian
 
 
   type tag = [
     | `Bytes (* block contains raw data *)
     | `Refs (* block contains an array of references to blocks *)
-  ]
+  ] with sexp
+
+  let tag_of_int = function
+    | 1 -> `Ok `Bytes
+    | 2 -> `Ok `Refs
+    | n -> `Error (`Msg (Printf.sprintf "Unknown tag: %d" n))
+
+  let int_of_tag = function
+    | `Bytes -> 1
+    | `Refs -> 2
 
   type t = {
     magic: string;
     version: int32;
     length: int64;
     deleted: bool;
+    tag: tag;
   } with sexp
 
-  let create length = { magic; version = 0l; length; deleted = false }
+  let create ~length ~tag = { magic; version = 0l; length; deleted = false; tag }
 
   let read ~block ~offset =
     B.get_info block
@@ -111,7 +122,11 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     let version = get_hdr_version sector in
     let length = get_hdr_length sector in
     let deleted = get_hdr_deleted sector = 1 in
-    Lwt.return (`Ok { magic; version; length; deleted })
+    let tag = get_hdr_tag sector in
+    let open Error.Infix in
+    Lwt.return (tag_of_int tag)
+    >>= fun tag ->
+    Lwt.return (`Ok { magic; version; length; deleted; tag })
 
   let write ~block ~offset t =
     B.get_info block
@@ -121,6 +136,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_version sector t.version;
     set_hdr_length sector t.length;
     set_hdr_deleted sector (if t.deleted then 1 else 2);
+    set_hdr_tag sector (int_of_tag t.tag);
     let open Error.FromBlock in
     B.write block 0L [ sector ]
     >>= fun () ->
@@ -143,7 +159,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     mutable root_block: Root_block.t;
   }
 
-  let allocate ~heap ~length () =
+  let allocate ~heap ~length ~tag () =
     (* if there are blocks above the high-water mark, grab those.
        otherwise trigger a compaction *)
     let sectors_required = (Int64.to_int length + heap.info.sector_size - 1) / heap.info.sector_size + 1 in
@@ -158,7 +174,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Root_block.write ~block:heap.underlying heap.root_block
       >>= fun () ->
       (* write an allocation header *)
-      let h = Allocated_block.create length in
+      let h = Allocated_block.create ~length ~tag in
       Allocated_block.write ~block:heap.underlying ~offset h
       >>= fun () ->
       Lwt.return (`Ok (offset, h))
@@ -247,7 +263,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
     let allocate ~heap ~length () =
       let open Error.Infix in
-      allocate ~heap ~length ()
+      allocate ~heap ~length ~tag:`Bytes ()
       >>= fun (offset, h) ->
       (* return the allocated BLOCK *)
       let open Lwt.Infix in
@@ -268,7 +284,7 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       let open Error.Infix in
       (* Each reference is a 64-bit integer *)
       let length = Int64.(mul 8L (of_int length)) in
-      allocate ~heap ~length ()
+      allocate ~heap ~length ~tag:`Refs ()
       >>= fun (offset, h) ->
       Lwt.return (`Error (`Msg "Refs.allocate unimplemented"))
 
