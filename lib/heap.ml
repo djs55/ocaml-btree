@@ -275,13 +275,14 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
   end
 
-  type reference = unit
+  type reference = int64
 
   module Refs = struct
     type t = {
       heap: heap;
       offset: int64;
       h: Allocated_block.t;
+      length: int;
     }
 
     let allocate ~heap ~length () =
@@ -295,16 +296,39 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       let open Error.FromBlock in
       Underlying.write heap.underlying (Int64.(add offset 1L)) [ data ]
       >>= fun () ->
-      Lwt.return (`Ok { heap; offset; h })
+      Lwt.return (`Ok { heap; offset; h; length })
 
     let deallocate ~t () =
       deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
 
+    let malloc t =
+      let sector_size = Int64.of_int t.heap.info.Underlying.sector_size in
+      let size_sectors = Int64.(div (pred (add t.h.Allocated_block.length sector_size)) sector_size) in
+      let size_bytes = Int64.mul size_sectors sector_size in
+      alloc (Int64.to_int size_bytes)
+
     let get t =
-      Lwt.return (`Error (`Msg "Refs.get unimplemented"))
+      let buf = malloc t in
+      let open Error.FromBlock in
+      Underlying.read t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
+      >>= fun () ->
+      let results = Array.create t.length None in
+      for i = 0 to t.length - 1 do
+        match Cstruct.LE.get_uint64 buf (i * 8) with
+        | 0L -> ()
+        | n -> results.(i) <- Some n
+      done;
+      Lwt.return (`Ok results)
 
     let set t rfs =
-      Lwt.return (`Error (`Msg "Refs.set unimplemented"))
+      let buf = malloc t in
+      for i = 0 to t.length - 1 do
+        Cstruct.LE.set_uint64 buf (i * 8) (match rfs.(i) with None -> 0L | Some x -> x)
+      done;
+      let open Error.FromBlock in
+      Underlying.write t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
+      >>= fun () ->
+      Lwt.return (`Ok ())
   end
 
   type contents =
