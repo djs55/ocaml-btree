@@ -24,43 +24,69 @@ open Error
 
 module Make(Underlying: V1_LWT.BLOCK): sig
 
-  type t
+  type heap
   (** A heap containing blocks *)
 
-  module Bytes: V1_LWT.BLOCK
+  type block
+  (** An allocated block *)
+
+  type reference
+  (** A reference to a block, stored inside a Ref block *)
+
+  module Bytes: sig
+    type t
+
+    val allocate: heap:heap -> length:int64 -> unit -> t error Lwt.t
+    (** Allocate a block of length [length] and return it so it may be
+        updated.
+        FIXME: add this to a transaction somehow
+    *)
+
+    val deallocate: t:t -> unit -> unit error Lwt.t
+    (** Deallocate a block by adding it to the free list.
+        FIXME: add this to a transaction somehow
+    *)
+
+    include V1_LWT.BLOCK with type t := t
+
+  end
   (** Raw data on the underlying device *)
 
   module Refs: sig
     type t
+
+    val allocate: heap:heap -> length:int -> unit -> t error Lwt.t
+    (** Allocate a reference block containing up to [length] references to
+        other blocks.
+        FIXME: add this to a transaction somehow
+    *)
+
+    val deallocate: t:t -> unit -> unit error Lwt.t
+    (** Deallocate a block by adding it to the free list.
+        FIXME: add this to a transaction somehow
+    *)
+
+    val get: t -> reference option array error Lwt.t
+    (** Read the array of references stored in the block *)
+
+    val set: t -> reference option array -> unit error Lwt.t
+    (** Update the array of references stored in the block *)
   end
   (** An array of optional references to other blocks *)
 
-  type _ contents =
-    | Bytes: Bytes.t -> Bytes.t contents
-    | Refs: Refs.t -> Refs.t contents
+  type contents =
+    | Bytes of Bytes.t
+    | Refs of Refs.t
     (** The contents of an allocated block *)
 
-  type 'a block
-  (** An allocated block *)
-
-  val contents_of_block: 'a block -> 'a contents
+  val contents_of_block: block -> contents
 
   val format: block:Underlying.t -> unit -> unit error Lwt.t
   (** [format block] initialises the underlying block device. Some data will
       be lost, but the device won't be securely erased. *)
 
-  val connect: block:Underlying.t -> unit -> t error Lwt.t
+  val connect: block:Underlying.t -> unit -> heap error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
-  val allocate: t:t -> length:int64 -> unit -> Bytes.t block error Lwt.t
-  (** Allocate a block of length [length] and return it so it may be
-      updated.
-      FIXME: add this to a transaction somehow
-  *)
-
-  val deallocate: block:Bytes.t block -> unit -> unit error Lwt.t
-  (** Deallocate a block by adding it to the free list.
-      FIXME: add this to a transaction somehow
-  *)
 
 end
