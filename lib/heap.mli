@@ -27,9 +27,6 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   type heap
   (** A heap containing blocks *)
 
-  type block
-  (** An allocated block *)
-
   type reference
   (** A reference to a block, stored inside a Ref block *)
 
@@ -80,12 +77,10 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   end
   (** An array of optional references to other blocks *)
 
-  type contents =
+  type block =
     | Bytes of Bytes.t
     | Refs of Refs.t
-    (** The contents of an allocated block *)
-
-  val contents_of_block: block -> contents
+    (** An allocated block *)
 
   val lookup: heap:heap -> ref:reference -> unit -> block error Lwt.t
   (** [lookup ref] dereferences the [ref] and reads the block from disk *)

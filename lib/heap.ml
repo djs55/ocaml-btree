@@ -348,13 +348,9 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Lwt.return (`Ok ())
   end
 
-  type contents =
+  type block =
     | Bytes of Bytes.t
     | Refs of Refs.t
-
-  type block = contents
-
-  let contents_of_block x = x
 
   let lookup ~heap ~ref () =
     let open Error.Infix in
