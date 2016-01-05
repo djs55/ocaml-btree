@@ -17,8 +17,10 @@
 open Sexplib.Std
 open Lwt.Infix
 
+let roundup multiple size = (size + multiple - 1) / multiple * multiple
+
 let alloc size =
-  let npages = (size + 4095) / 4096 in
+  let npages = (roundup 4096 size) / 4096 in
   let pages = Io_page.get npages in
   Cstruct.(sub (Io_page.to_cstruct pages) 0 size)
 
@@ -310,7 +312,8 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       let length_bytes = Int64.(mul 8L (of_int (length + 1))) in
       allocate ~heap ~length:length_bytes ~tag:`Refs ()
       >>= fun (offset, h) ->
-      let data = Cstruct.create (Int64.to_int length_bytes) in
+      let size = roundup heap.info.Underlying.sector_size (Int64.to_int length_bytes) in
+      let data = alloc size in
       Cstruct.memset data 0;
       Cstruct.LE.set_uint64 data 0 (Int64.of_int length);
       let open Error.FromBlock in
