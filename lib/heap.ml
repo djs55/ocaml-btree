@@ -30,6 +30,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
   cstruct hdr {
       uint8_t magic[16];
       uint32_t version;
+      uint64_t root;
       uint64_t high_water_mark;
       uint64_t free_list;
     } as little_endian
@@ -37,11 +38,12 @@ module Root_block(B: V1_LWT.BLOCK) = struct
   type t = {
     magic: string;
     version: int32;
+    root: int64; (* reference to the root reference block *)
     high_water_mark: int64; (* sectors >= the high_water_mark have not been written to *)
     free_list: int64; (* reference to the first block on the free list *)
   } with sexp
 
-  let create () = { magic; version = 0l; high_water_mark = 0L; free_list = 0L }
+  let create () = { magic; version = 0l; root = 0L; high_water_mark = 0L; free_list = 0L }
 
   let read ~block =
     B.get_info block
@@ -52,6 +54,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     >>= fun () ->
     let magic' = Cstruct.to_string (get_hdr_magic sector) in
     let version = get_hdr_version sector in
+    let root = get_hdr_root sector in
     let high_water_mark = get_hdr_high_water_mark sector in
     let free_list = get_hdr_free_list sector in
     if magic <> magic'
@@ -59,7 +62,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     else begin
       if version <> 0l
       then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected header version, expected '%ld' but read '%ld'" 0l version)))
-      else Lwt.return (`Ok { magic; version; high_water_mark; free_list })
+      else Lwt.return (`Ok { magic; version; root; high_water_mark; free_list })
     end
   let write ~block t =
     B.get_info block
@@ -67,6 +70,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     let sector = alloc info.B.sector_size in
     set_hdr_magic magic 0 sector;
     set_hdr_version sector t.version;
+    set_hdr_root sector t.root;
     set_hdr_high_water_mark sector t.high_water_mark;
     set_hdr_free_list sector t.free_list;
     let open Error.FromBlock in
@@ -367,10 +371,6 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       >>= fun x ->
       Lwt.return (`Ok (Refs x))
 
-  let format ~block () =
-    (* write a fresh root block *)
-    Root_block.(write ~block (create ()))
-
   let connect ~block () =
     Underlying.get_info block
     >>= fun info ->
@@ -380,5 +380,20 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     >>= fun root_block ->
     Lwt.return (`Ok { underlying = block; info; root_block })
 
+  let format ~block () =
+    (* write a fresh root block *)
+    let open Error.Infix in
+    let root = Root_block.create () in
+    Root_block.write ~block root
+    >>= fun () ->
+    connect ~block ()
+    >>= fun heap ->
+    Refs.allocate ~heap ~length:32 ()
+    >>= fun b ->
+    let rf = Refs.ref b in
+    let root = { root with Root_block.root = rf } in
+    Root_block.write ~block root
+
+  let root ~heap () = heap.root_block.Root_block.root
 
 end

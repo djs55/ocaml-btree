@@ -92,5 +92,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> heap error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
+  val root: heap:heap -> unit -> reference
+  (** [root heap ()] returns the constant reference to root reference block *)
 
 end
