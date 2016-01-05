@@ -47,6 +47,9 @@ module Make(Underlying: V1_LWT.BLOCK): sig
         FIXME: add this to a transaction somehow
     *)
 
+    val ref: t -> reference
+    (** Return a reference to the block *)
+
     include V1_LWT.BLOCK with type t := t
 
   end
@@ -66,6 +69,9 @@ module Make(Underlying: V1_LWT.BLOCK): sig
         FIXME: add this to a transaction somehow
     *)
 
+    val ref: t -> reference
+    (** Return a reference to the block *)
+
     val get: t -> reference option array error Lwt.t
     (** Read the array of references stored in the block *)
 
@@ -80,6 +86,9 @@ module Make(Underlying: V1_LWT.BLOCK): sig
     (** The contents of an allocated block *)
 
   val contents_of_block: block -> contents
+
+  val lookup: heap:heap -> ref:reference -> unit -> block error Lwt.t
+  (** [lookup ref] dereferences the [ref] and reads the block from disk *)
 
   val format: block:Underlying.t -> unit -> unit error Lwt.t
   (** [format block] initialises the underlying block device. Some data will
