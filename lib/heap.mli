@@ -27,9 +27,6 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   type heap
   (** A heap containing blocks *)
 
-  type block
-  (** An allocated block *)
-
   type reference
   (** A reference to a block, stored inside a Ref block *)
 
@@ -46,6 +43,9 @@ module Make(Underlying: V1_LWT.BLOCK): sig
     (** Deallocate a block by adding it to the free list.
         FIXME: add this to a transaction somehow
     *)
+
+    val ref: t -> reference
+    (** Return a reference to the block *)
 
     include V1_LWT.BLOCK with type t := t
 
@@ -66,6 +66,9 @@ module Make(Underlying: V1_LWT.BLOCK): sig
         FIXME: add this to a transaction somehow
     *)
 
+    val ref: t -> reference
+    (** Return a reference to the block *)
+
     val get: t -> reference option array error Lwt.t
     (** Read the array of references stored in the block *)
 
@@ -74,12 +77,13 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   end
   (** An array of optional references to other blocks *)
 
-  type contents =
+  type block =
     | Bytes of Bytes.t
     | Refs of Refs.t
-    (** The contents of an allocated block *)
+    (** An allocated block *)
 
-  val contents_of_block: block -> contents
+  val lookup: heap:heap -> ref:reference -> unit -> block error Lwt.t
+  (** [lookup ref] dereferences the [ref] and reads the block from disk *)
 
   val format: block:Underlying.t -> unit -> unit error Lwt.t
   (** [format block] initialises the underlying block device. Some data will
@@ -88,5 +92,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> heap error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
+  val root: heap:heap -> unit -> reference
+  (** [root heap ()] returns the constant reference to root reference block *)
 
 end
