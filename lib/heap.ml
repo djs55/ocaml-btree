@@ -144,7 +144,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_deleted sector (if t.deleted then 1 else 2);
     set_hdr_tag sector (int_of_tag t.tag);
     let open Error.FromBlock in
-    B.write block 0L [ sector ]
+    B.write block offset [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
 end
