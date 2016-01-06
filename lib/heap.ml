@@ -45,7 +45,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     free_list: int64; (* reference to the first block on the free list *)
   } with sexp
 
-  let create () = { magic; version = 0l; root = 0L; high_water_mark = 0L; free_list = 0L }
+  let create () = { magic; version = 0l; root = 0L; high_water_mark = 1L; free_list = 0L }
 
   let read ~block =
     B.get_info block
