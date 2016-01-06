@@ -45,7 +45,7 @@ module Root_block(B: V1_LWT.BLOCK) = struct
     free_list: int64; (* reference to the first block on the free list *)
   } with sexp
 
-  let create () = { magic; version = 0l; root = 0L; high_water_mark = 0L; free_list = 0L }
+  let create () = { magic; version = 0l; root = 0L; high_water_mark = 1L; free_list = 0L }
 
   let read ~block =
     B.get_info block
@@ -124,15 +124,19 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     let open Error.FromBlock in
     B.read block offset [ sector ]
     >>= fun () ->
-    let magic = Cstruct.to_string (get_hdr_magic sector) in
-    let version = get_hdr_version sector in
-    let length = get_hdr_length sector in
-    let deleted = get_hdr_deleted sector = 1 in
-    let tag = get_hdr_tag sector in
-    let open Error.Infix in
-    Lwt.return (tag_of_int tag)
-    >>= fun tag ->
-    Lwt.return (`Ok { magic; version; length; deleted; tag })
+    let magic' = Cstruct.to_string (get_hdr_magic sector) in
+    if magic <> magic'
+    then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected block header magic, expected '%s' but read '%s'" magic magic')))
+    else begin
+      let version = get_hdr_version sector in
+      let length = get_hdr_length sector in
+      let deleted = get_hdr_deleted sector = 1 in
+      let tag = get_hdr_tag sector in
+      let open Error.Infix in
+      Lwt.return (tag_of_int tag)
+      >>= fun tag ->
+      Lwt.return (`Ok { magic = magic'; version; length; deleted; tag })
+    end
 
   let write ~block ~offset t =
     B.get_info block
@@ -144,7 +148,7 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     set_hdr_deleted sector (if t.deleted then 1 else 2);
     set_hdr_tag sector (int_of_tag t.tag);
     let open Error.FromBlock in
-    B.write block 0L [ sector ]
+    B.write block offset [ sector ]
     >>= fun () ->
     Lwt.return (`Ok ())
 end
@@ -186,23 +190,106 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Lwt.return (`Ok (offset, h))
     end
 
-    let deallocate ~heap ~offset ~h () =
-      (* Mark the block as deleted to help detect use-after-free bugs *)
-      let h = { h with Allocated_block.deleted = true } in
-      let open Error.Infix in
-      Allocated_block.write ~block:heap.underlying ~offset h
+  let deallocate ~heap ~offset ~h () =
+    (* Mark the block as deleted to help detect use-after-free bugs *)
+    let h = { h with Allocated_block.deleted = true } in
+    let open Error.Infix in
+    Allocated_block.write ~block:heap.underlying ~offset h
+    >>= fun () ->
+    (* If this block is the highest allocated block, then decrease the low
+       water mark *)
+    let sector_size = heap.info.sector_size in
+    let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+    if Int64.(add offset (of_int length_sectors)) = heap.root_block.Root_block.high_water_mark then begin
+      heap.root_block <- { heap.root_block with Root_block.high_water_mark = offset };
+      Root_block.write ~block:heap.underlying heap.root_block
+    end else begin
+      (* Add the blocks to the free list *)
+      failwith "unimplemented: deallocate"
+    end
+
+  type reference = int64
+
+  module Refs = struct
+    type t = {
+      heap: heap;
+      offset: int64;
+      h: Allocated_block.t;
+      length: int;
+    }
+
+    let ref t = t.offset
+
+    let malloc t =
+      let sector_size = Int64.of_int t.heap.info.Underlying.sector_size in
+      let size_sectors = Int64.(div (pred (add t.h.Allocated_block.length sector_size)) sector_size) in
+      let size_bytes = Int64.mul size_sectors sector_size in
+      alloc (Int64.to_int size_bytes)
+
+    let connect ~heap ~offset ~h =
+      let sector = alloc heap.info.Underlying.sector_size in
+      let open Error.FromBlock in
+      Underlying.read heap.underlying (Int64.add offset 1L) [ sector ]
       >>= fun () ->
-      (* If this block is the highest allocated block, then decrease the low
-         water mark *)
-      let sector_size = heap.info.sector_size in
-      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
-      if Int64.(add offset (of_int length_sectors)) = heap.root_block.Root_block.high_water_mark then begin
-        heap.root_block <- { heap.root_block with Root_block.high_water_mark = offset };
-        Root_block.write ~block:heap.underlying heap.root_block
-      end else begin
-        (* Add the blocks to the free list *)
-        failwith "unimplemented: deallocate"
-      end
+      let length = Int64.to_int (Cstruct.LE.get_uint64 sector 0) in
+      Lwt.return (`Ok { heap; offset; h; length })
+
+    let get t =
+      let buf = malloc t in
+      let open Error.FromBlock in
+      Underlying.read t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
+      >>= fun () ->
+      let results = Array.create t.length None in
+      for i = 0 to t.length - 1 do
+        match Cstruct.LE.get_uint64 buf ((i + 1) * 8) with
+        | 0L -> ()
+        | n -> results.(i) <- Some n
+      done;
+      Lwt.return (`Ok results)
+
+    let set t rfs =
+      let buf = malloc t in
+      Cstruct.LE.set_uint64 buf 0 (Int64.of_int t.length);
+      for i = 0 to t.length - 1 do
+        Cstruct.LE.set_uint64 buf ((i + 1) * 8) (match rfs.(i) with None -> 0L | Some x -> x)
+      done;
+      let open Error.FromBlock in
+      Underlying.write t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
+      >>= fun () ->
+      Lwt.return (`Ok ())
+
+    let allocate_internal ~heap ~length () =
+      let open Error.Infix in
+      (* Each reference is a 64-bit integer. The first integer is the length *)
+      let length_bytes = Int64.(mul 8L (of_int (length + 1))) in
+      allocate ~heap ~length:length_bytes ~tag:`Refs ()
+      >>= fun (offset, h) ->
+      (* FIXME: a crash at this point will leave the block unreferenced *)
+      let size = roundup heap.info.Underlying.sector_size (Int64.to_int length_bytes) in
+      let data = alloc size in
+      Cstruct.memset data 0;
+      Cstruct.LE.set_uint64 data 0 (Int64.of_int length);
+      let open Error.FromBlock in
+      Underlying.write heap.underlying (Int64.(add offset 1L)) [ data ]
+      >>= fun () ->
+      Lwt.return (`Ok { heap; offset; h; length })
+
+    let allocate ~parent ~index ~length () =
+      let open Error.Infix in
+      allocate_internal ~heap:parent.heap ~length ()
+      >>= fun block ->
+      (* Write the reference in the parent block *)
+      get parent
+      >>= fun current_refs ->
+      current_refs.(index) <- Some block.offset;
+      set parent current_refs
+      >>= fun () ->
+      (* Now the block is fully referenced *)
+      Lwt.return (`Ok block)
+
+    let deallocate ~t () =
+      deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
+  end
 
   module Bytes = struct
     (* This could evolve into something like a device-mapper device, when we
@@ -272,87 +359,24 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
 
     let create heap offset h = connect ~heap ~offset ~h
 
-    let allocate ~heap ~length () =
+    let allocate ~parent ~index ~length () =
       let open Error.Infix in
-      allocate ~heap ~length ~tag:`Bytes ()
+      allocate ~heap:parent.Refs.heap ~length ~tag:`Bytes ()
       >>= fun (offset, h) ->
+      (* FIXME: at this point if we crash the block will be lost *)
+      Refs.get parent
+      >>= fun parent_refs ->
+      parent_refs.(index) <- Some offset;
+      Refs.set parent parent_refs
+      >>= fun () ->
       (* return the allocated BLOCK *)
       let open Lwt.Infix in
-      create heap offset h
+      create parent.Refs.heap offset h
       >>= fun bytes ->
       Lwt.return (`Ok bytes)
 
     let deallocate ~t () =
       deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
-  end
-
-  type reference = int64
-
-  module Refs = struct
-    type t = {
-      heap: heap;
-      offset: int64;
-      h: Allocated_block.t;
-      length: int;
-    }
-
-    let ref t = t.offset
-
-    let connect ~heap ~offset ~h =
-      let sector = alloc heap.info.Underlying.sector_size in
-      let open Error.FromBlock in
-      Underlying.read heap.underlying (Int64.add offset 1L) [ sector ]
-      >>= fun () ->
-      let length = Int64.to_int (Cstruct.LE.get_uint64 sector 0) in
-      Lwt.return (`Ok { heap; offset; h; length })
-
-    let allocate ~heap ~length () =
-      let open Error.Infix in
-      (* Each reference is a 64-bit integer. The first integer is the length *)
-      let length_bytes = Int64.(mul 8L (of_int (length + 1))) in
-      allocate ~heap ~length:length_bytes ~tag:`Refs ()
-      >>= fun (offset, h) ->
-      let size = roundup heap.info.Underlying.sector_size (Int64.to_int length_bytes) in
-      let data = alloc size in
-      Cstruct.memset data 0;
-      Cstruct.LE.set_uint64 data 0 (Int64.of_int length);
-      let open Error.FromBlock in
-      Underlying.write heap.underlying (Int64.(add offset 1L)) [ data ]
-      >>= fun () ->
-      Lwt.return (`Ok { heap; offset; h; length })
-
-    let deallocate ~t () =
-      deallocate ~heap:t.heap ~offset:t.offset ~h:t.h ()
-
-    let malloc t =
-      let sector_size = Int64.of_int t.heap.info.Underlying.sector_size in
-      let size_sectors = Int64.(div (pred (add t.h.Allocated_block.length sector_size)) sector_size) in
-      let size_bytes = Int64.mul size_sectors sector_size in
-      alloc (Int64.to_int size_bytes)
-
-    let get t =
-      let buf = malloc t in
-      let open Error.FromBlock in
-      Underlying.read t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
-      >>= fun () ->
-      let results = Array.create t.length None in
-      for i = 0 to t.length - 1 do
-        match Cstruct.LE.get_uint64 buf ((i + 1) * 8) with
-        | 0L -> ()
-        | n -> results.(i) <- Some n
-      done;
-      Lwt.return (`Ok results)
-
-    let set t rfs =
-      let buf = malloc t in
-      Cstruct.LE.set_uint64 buf 0 (Int64.of_int t.length);
-      for i = 0 to t.length - 1 do
-        Cstruct.LE.set_uint64 buf ((i + 1) * 8) (match rfs.(i) with None -> 0L | Some x -> x)
-      done;
-      let open Error.FromBlock in
-      Underlying.write t.heap.underlying (Int64.(add t.offset 1L)) [ buf ]
-      >>= fun () ->
-      Lwt.return (`Ok ())
   end
 
   type block =
@@ -391,12 +415,18 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     >>= fun () ->
     connect ~block ()
     >>= fun heap ->
-    Refs.allocate ~heap ~length:32 ()
+    Refs.allocate_internal ~heap ~length:32 ()
     >>= fun b ->
     let rf = Refs.ref b in
     let root = { root with Root_block.root = rf } in
     Root_block.write ~block root
 
-  let root ~heap () = heap.root_block.Root_block.root
+  let root ~heap () =
+    let ref = heap.root_block.Root_block.root in
+    let open Error.Infix in
+    lookup ~heap ~ref ()
+    >>= function
+    | Bytes _ -> assert false
+    | Refs x -> Lwt.return (`Ok x)
 
 end
