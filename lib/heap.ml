@@ -124,15 +124,19 @@ module Allocated_block(B: V1_LWT.BLOCK) = struct
     let open Error.FromBlock in
     B.read block offset [ sector ]
     >>= fun () ->
-    let magic = Cstruct.to_string (get_hdr_magic sector) in
-    let version = get_hdr_version sector in
-    let length = get_hdr_length sector in
-    let deleted = get_hdr_deleted sector = 1 in
-    let tag = get_hdr_tag sector in
-    let open Error.Infix in
-    Lwt.return (tag_of_int tag)
-    >>= fun tag ->
-    Lwt.return (`Ok { magic; version; length; deleted; tag })
+    let magic' = Cstruct.to_string (get_hdr_magic sector) in
+    if magic <> magic'
+    then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected block header magic, expected '%s' but read '%s'" magic magic')))
+    else begin
+      let version = get_hdr_version sector in
+      let length = get_hdr_length sector in
+      let deleted = get_hdr_deleted sector = 1 in
+      let tag = get_hdr_tag sector in
+      let open Error.Infix in
+      Lwt.return (tag_of_int tag)
+      >>= fun tag ->
+      Lwt.return (`Ok { magic = magic'; version; length; deleted; tag })
+    end
 
   let write ~block ~offset t =
     B.get_info block
