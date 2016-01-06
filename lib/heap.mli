@@ -30,10 +30,32 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   type reference
   (** A reference to a block, stored inside a Ref block *)
 
+  module Refs: sig
+    type t
+
+    val allocate: parent:t -> index:int -> length:int -> unit -> t error Lwt.t
+    (** Allocate a child reference block and set a reference to it from
+        [t] at array index [index]. The created block will be of length
+        [length] references. *)
+
+    val deallocate: t:t -> unit -> unit error Lwt.t
+    (** Mark a reference block as unused so that it may be garbage collected. *)
+
+    val ref: t -> reference
+    (** Return a reference to the block *)
+
+    val get: t -> reference option array error Lwt.t
+    (** Read the array of references stored in the block *)
+
+    val set: t -> reference option array -> unit error Lwt.t
+    (** Update the array of references stored in the block *)
+  end
+  (** An array of optional references to other blocks *)
+
   module Bytes: sig
     type t
 
-    val allocate: heap:heap -> length:int64 -> unit -> t error Lwt.t
+    val allocate: parent:Refs.t -> index:int -> length:int64 -> unit -> t error Lwt.t
     (** Allocate a block of length [length] and return it so it may be
         updated.
         FIXME: add this to a transaction somehow
@@ -52,28 +74,6 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   end
   (** Raw data on the underlying device *)
 
-  module Refs: sig
-    type t
-
-    val allocate: t:t -> index:int -> length:int -> unit -> t error Lwt.t
-    (** Allocate a child reference block and set a reference to it from
-        [t] at array index [index]. The created block will be of length
-        [length] references. *)
-
-    val deallocate: t:t -> unit -> unit error Lwt.t
-    (** Mark a reference block as unused so that it may be garbage collected. *)
-    
-    val ref: t -> reference
-    (** Return a reference to the block *)
-
-    val get: t -> reference option array error Lwt.t
-    (** Read the array of references stored in the block *)
-
-    val set: t -> reference option array -> unit error Lwt.t
-    (** Update the array of references stored in the block *)
-  end
-  (** An array of optional references to other blocks *)
-
   type block =
     | Bytes of Bytes.t
     | Refs of Refs.t
@@ -89,7 +89,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> heap error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
-  val root: heap:heap -> unit -> reference
-  (** [root heap ()] returns the constant reference to root reference block *)
+  val root: heap:heap -> unit -> Refs.t error Lwt.t
+  (** [root heap ()] returns the root reference block *)
 
 end

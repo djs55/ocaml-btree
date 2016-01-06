@@ -65,7 +65,10 @@ let heap_allocate_deallocate () =
     H.connect ~block:from ()
     >>= fun h ->
     let h = expect_ok_msg h in
-    H.Bytes.allocate ~heap:h ~length:1L ()
+    H.root ~heap:h ()
+    >>= fun root ->
+    let root = expect_ok_msg root in
+    H.Bytes.allocate ~parent:root ~index:0 ~length:1L ()
     >>= fun block ->
     let block = expect_ok_msg block in
     H.Bytes.deallocate ~t:block ()
@@ -87,10 +90,13 @@ let heap_write_read () =
     >>= fun h ->
     let h = expect_ok_msg h in
     (* Allocate 2 blocks *)
-    H.Bytes.allocate ~heap:h ~length:1L ()
+    H.root ~heap:h ()
+    >>= fun root ->
+    let root = expect_ok_msg root in
+    H.Bytes.allocate ~parent:root ~index:0 ~length:1L ()
     >>= fun block1 ->
     let bytes1 = expect_ok_msg block1 in
-    H.Bytes.allocate ~heap:h ~length:1L ()
+    H.Bytes.allocate ~parent:root ~index:2 ~length:1L ()
     >>= fun block2 ->
     let bytes2 = expect_ok_msg block2 in
     (* Fill block1 with random data *)
