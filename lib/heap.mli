@@ -55,17 +55,14 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   module Refs: sig
     type t
 
-    val allocate: heap:heap -> length:int -> unit -> t error Lwt.t
-    (** Allocate a reference block containing up to [length] references to
-        other blocks.
-        FIXME: add this to a transaction somehow
-    *)
+    val allocate: t:t -> index:int -> length:int -> unit -> t error Lwt.t
+    (** Allocate a child reference block and set a reference to it from
+        [t] at array index [index]. The created block will be of length
+        [length] references. *)
 
     val deallocate: t:t -> unit -> unit error Lwt.t
-    (** Deallocate a block by adding it to the free list.
-        FIXME: add this to a transaction somehow
-    *)
-
+    (** Mark a reference block as unused so that it may be garbage collected. *)
+    
     val ref: t -> reference
     (** Return a reference to the block *)
 
