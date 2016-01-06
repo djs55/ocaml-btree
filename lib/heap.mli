@@ -93,3 +93,6 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   (** [root heap ()] returns the root reference block *)
 
 end
+
+val alloc: int -> Cstruct.t
+(** [alloc n] allocate a page-aligned buffer of length [n] *)

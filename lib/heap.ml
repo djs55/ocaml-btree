@@ -190,23 +190,23 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
       Lwt.return (`Ok (offset, h))
     end
 
-    let deallocate ~heap ~offset ~h () =
-      (* Mark the block as deleted to help detect use-after-free bugs *)
-      let h = { h with Allocated_block.deleted = true } in
-      let open Error.Infix in
-      Allocated_block.write ~block:heap.underlying ~offset h
-      >>= fun () ->
-      (* If this block is the highest allocated block, then decrease the low
-         water mark *)
-      let sector_size = heap.info.sector_size in
-      let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
-      if Int64.(add offset (of_int length_sectors)) = heap.root_block.Root_block.high_water_mark then begin
-        heap.root_block <- { heap.root_block with Root_block.high_water_mark = offset };
-        Root_block.write ~block:heap.underlying heap.root_block
-      end else begin
-        (* Add the blocks to the free list *)
-        failwith "unimplemented: deallocate"
-      end
+  let deallocate ~heap ~offset ~h () =
+    (* Mark the block as deleted to help detect use-after-free bugs *)
+    let h = { h with Allocated_block.deleted = true } in
+    let open Error.Infix in
+    Allocated_block.write ~block:heap.underlying ~offset h
+    >>= fun () ->
+    (* If this block is the highest allocated block, then decrease the low
+       water mark *)
+    let sector_size = heap.info.sector_size in
+    let length_sectors = (Int64.to_int h.Allocated_block.length + sector_size - 1) / sector_size + 1 in
+    if Int64.(add offset (of_int length_sectors)) = heap.root_block.Root_block.high_water_mark then begin
+      heap.root_block <- { heap.root_block with Root_block.high_water_mark = offset };
+      Root_block.write ~block:heap.underlying heap.root_block
+    end else begin
+      (* Add the blocks to the free list *)
+      failwith "unimplemented: deallocate"
+    end
 
   type reference = int64
 

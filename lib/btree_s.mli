@@ -57,7 +57,7 @@ module type TREE = sig
   type element
   type block
 
-  val create: block -> t error Lwt.t
+  val create: block:block -> d:int -> unit -> t error Lwt.t
   val connect: block -> t error Lwt.t
 
   val insert: t -> element -> t error Lwt.t

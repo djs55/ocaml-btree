@@ -134,7 +134,7 @@ let tree_create () =
     >>= fun x ->
     let block = expect_ok "Ramdisk.connect" x in
     let module T = Btree.Make(Ramdisk)(StringElement) in
-    T.create block
+    T.create ~block ~d:2 ()
     >>= fun t ->
     let _ = expect_ok "T.create" t in
     Lwt.return () in
