@@ -30,13 +30,13 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   type reference
   (** A reference to a block, stored inside a Ref block *)
 
-  module Refs: sig
+  module Block : sig
     type t
 
-    val allocate: parent:t -> index:int -> length:int -> unit -> t error Lwt.t
-    (** Allocate a child reference block and set a reference to it from
-        [t] at array index [index]. The created block will be of length
-        [length] references. *)
+    val allocate: parent:t -> index:int -> nrefs:int -> nbytes:int64 -> unit -> t error Lwt.t
+    (** Allocate a child  block and set a reference to it from
+        [t] at array index [index]. The created block will contain [nrefs]
+        block references (initially set to None) and [nbytes] payload bytes *)
 
     val deallocate: t:t -> unit -> unit error Lwt.t
     (** Mark a reference block as unused so that it may be garbage collected. *)
@@ -49,37 +49,11 @@ module Make(Underlying: V1_LWT.BLOCK): sig
 
     val set: t -> reference option array -> unit error Lwt.t
     (** Update the array of references stored in the block *)
-  end
-  (** An array of optional references to other blocks *)
-
-  module Bytes: sig
-    type t
-
-    val allocate: parent:Refs.t -> index:int -> length:int64 -> unit -> t error Lwt.t
-    (** Allocate a block of length [length] and return it so it may be
-        updated.
-        FIXME: add this to a transaction somehow
-    *)
-
-    val deallocate: t:t -> unit -> unit error Lwt.t
-    (** Deallocate a block by adding it to the free list.
-        FIXME: add this to a transaction somehow
-    *)
-
-    val ref: t -> reference
-    (** Return a reference to the block *)
 
     include V1_LWT.BLOCK with type t := t
-
   end
-  (** Raw data on the underlying device *)
 
-  type block =
-    | Bytes of Bytes.t
-    | Refs of Refs.t
-    (** An allocated block *)
-
-  val lookup: heap:heap -> ref:reference -> unit -> block error Lwt.t
+  val lookup: heap:heap -> ref:reference -> unit -> Block.t error Lwt.t
   (** [lookup ref] dereferences the [ref] and reads the block from disk *)
 
   val format: block:Underlying.t -> unit -> unit error Lwt.t
@@ -89,7 +63,7 @@ module Make(Underlying: V1_LWT.BLOCK): sig
   val connect: block:Underlying.t -> unit -> heap error Lwt.t
   (** [connect block] connects to the Heap stored on [block] *)
 
-  val root: heap:heap -> unit -> Refs.t error Lwt.t
+  val root: heap:heap -> unit -> Block.t error Lwt.t
   (** [root heap ()] returns the root reference block *)
 
 end

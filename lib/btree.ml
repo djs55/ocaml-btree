@@ -47,23 +47,16 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
     type t = unit
 
-    let lookup ~heap ~ref () =
-      let open Error.Infix in
-      Heap.lookup ~heap ~ref ()
-      >>= function
-      | Heap.Refs _ -> Lwt.return (`Error (`Msg "Node.read: expected Bytes, found Refs"))
-      | Heap.Bytes b -> Lwt.return (`Ok b)
-
     let read ~heap ~ref () =
       let open Error.Infix in
-      lookup ~heap ~ref ()
+      Heap.lookup ~heap ~ref ()
       >>= fun b ->
       let open Lwt.Infix in
-      Heap.Bytes.get_info b
+      Heap.Block.get_info b
       >>= fun info ->
       let open Error.FromBlock in
-      let buf = alloc info.Heap.Bytes.sector_size in
-      Heap.Bytes.read b 0L [ buf ]
+      let buf = alloc info.Heap.Block.sector_size in
+      Heap.Block.read b 0L [ buf ]
       >>= fun () ->
       let magic' = Cstruct.to_string (get_node_hdr_magic buf) in
       if magic <> magic'
@@ -74,15 +67,15 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
     let write ~heap ~ref ~t () =
       let open Error.Infix in
-      lookup ~heap ~ref ()
+      Heap.lookup ~heap ~ref ()
       >>= fun b ->
       let open Lwt.Infix in
-      Heap.Bytes.get_info b
+      Heap.Block.get_info b
       >>= fun info ->
       let open Error.FromBlock in
-      let buf = alloc info.Heap.Bytes.sector_size in
+      let buf = alloc info.Heap.Block.sector_size in
       set_node_hdr_magic magic 0 buf;
-      Heap.Bytes.write b 0L [ buf ]
+      Heap.Block.write b 0L [ buf ]
       >>= fun () ->
       Lwt.return (`Ok ())
   end
@@ -96,7 +89,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun heap ->
     Heap.root ~heap ()
     >>= fun root ->
-    Heap.Refs.get root
+    Heap.Block.get root
     >>= fun refs ->
     match (if Array.length refs <= header_index then None else refs.(header_index)) with
     | None ->
@@ -104,19 +97,16 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     | Some ref ->
       begin
         Heap.lookup ~heap ~ref ()
-        >>= function
-        | Heap.Refs _ ->
-          Lwt.return (`Error (`Msg "b-tree description block has the wrong type"))
-        | Heap.Bytes bytes ->
-          let buf = alloc info.B.sector_size in
-          let open Error.FromBlock in
-          Heap.Bytes.read bytes 0L [ buf ]
-          >>= fun () ->
-          let magic' = Cstruct.to_string (get_tree_hdr_magic buf) in
-          let d = get_tree_hdr_d buf in
-          if magic <> magic'
-          then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected b-tree description magic, expected '%s' but read '%s'" magic magic')))
-          else Lwt.return (`Ok { heap; d })
+        >>= fun block ->
+        let buf = alloc info.B.sector_size in
+        let open Error.FromBlock in
+        Heap.Block.read block 0L [ buf ]
+        >>= fun () ->
+        let magic' = Cstruct.to_string (get_tree_hdr_magic buf) in
+        let d = get_tree_hdr_d buf in
+        if magic <> magic'
+        then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected b-tree description magic, expected '%s' but read '%s'" magic magic')))
+        else Lwt.return (`Ok { heap; d })
       end
 
   let create ~block ~d () =
@@ -130,13 +120,13 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun heap ->
     Heap.root ~heap ()
     >>= fun root ->
-    Heap.Bytes.allocate ~parent:root ~index:header_index ~length:(Int64.of_int sizeof_tree_hdr) ()
+    Heap.Block.allocate ~parent:root ~index:header_index ~nbytes:(Int64.of_int sizeof_tree_hdr) ~nrefs:0 ()
     >>= fun bytes ->
     let buf = alloc info.B.sector_size in
     set_tree_hdr_magic magic 0 buf;
     set_tree_hdr_d buf d;
     let open Error.FromBlock in
-    Heap.Bytes.write bytes 0L [ buf ]
+    Heap.Block.write bytes 0L [ buf ]
     >>= fun () ->
     Lwt.return (`Ok { heap; d })
 
