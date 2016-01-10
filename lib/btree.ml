@@ -25,10 +25,13 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
   type t = {
     heap: Heap.heap;
     d: int; (* minimum number of keys in a node *)
+    root: Heap.reference; (* the root block *)
   }
   type block = B.t
 
   let header_index = 0 (* in root block *)
+
+  let root_node_index = 1 (* in root block *)
 
   let magic = "MIRAGEBTREE\174\067\003\088\230"
 
@@ -78,6 +81,16 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       Heap.Block.write b 0L [ buf ]
       >>= fun () ->
       Lwt.return (`Ok ())
+
+    let allocate ~heap ~d ~parent ~index () =
+      let open Error.Infix in
+      Heap.Block.allocate ~parent ~index ~nrefs:(2 * d) ~nbytes:(Int64.of_int (2 * d * E.size)) ()
+      >>= fun block ->
+      let ref = Heap.Block.ref block in
+      let t = () in
+      write ~heap ~ref ~t ()
+      >>= fun () ->
+      Lwt.return (`Ok ref)
   end
 
   let connect block =
@@ -91,12 +104,13 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun root ->
     Heap.Block.get root
     >>= fun refs ->
-    match (if Array.length refs <= header_index then None else refs.(header_index)) with
-    | None ->
-      Lwt.return (`Error (`Msg "Failed to read b-tree description block"))
-    | Some ref ->
+    match
+      (if Array.length refs <= header_index then None else refs.(header_index)),
+      (if Array.length refs <= root_node_index then None else refs.(root_node_index))
+    with
+    | Some hdr, Some root ->
       begin
-        Heap.lookup ~heap ~ref ()
+        Heap.lookup ~heap ~ref:hdr ()
         >>= fun block ->
         let buf = alloc info.B.sector_size in
         let open Error.FromBlock in
@@ -106,8 +120,10 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
         let d = get_tree_hdr_d buf in
         if magic <> magic'
         then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected b-tree description magic, expected '%s' but read '%s'" magic magic')))
-        else Lwt.return (`Ok { heap; d })
+        else Lwt.return (`Ok { heap; d; root })
       end
+    | _, _ ->
+      Lwt.return (`Error (`Msg "Failed to read b-tree description block"))
 
   let create ~block ~d () =
     let open Lwt.Infix in
@@ -128,8 +144,10 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     let open Error.FromBlock in
     Heap.Block.write bytes 0L [ buf ]
     >>= fun () ->
-    Lwt.return (`Ok { heap; d })
-
+    let open Error.Infix in
+    Node.allocate ~heap ~d ~parent:root ~index:root_node_index ()
+    >>= fun root ->
+    Lwt.return (`Ok { heap; d; root })
 
   let insert _ _ = failwith "insert"
   let delete _ _ = failwith "delete"

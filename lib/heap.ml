@@ -215,9 +215,9 @@ module Make(Underlying: V1_LWT.BLOCK) = struct
     }
 
     cstruct hdr {
-      uint64_t nrefs;
-      uint64_t nbytes;
-    } as little_endian
+        uint64_t nrefs;
+        uint64_t nbytes;
+      } as little_endian
 
     let ref t = t.offset
 
