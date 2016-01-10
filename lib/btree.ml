@@ -37,6 +37,56 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       uint16_t d;
     } as little_endian
 
+  module Node = struct
+
+    let magic = "NODE\161\218\173\152\079\151\194\065\090\038\040\183"
+
+    cstruct node_hdr {
+        uint8_t magic[16];
+      } as little_endian
+
+    type t = unit
+
+    let lookup ~heap ~ref () =
+      let open Error.Infix in
+      Heap.lookup ~heap ~ref ()
+      >>= function
+      | Heap.Refs _ -> Lwt.return (`Error (`Msg "Node.read: expected Bytes, found Refs"))
+      | Heap.Bytes b -> Lwt.return (`Ok b)
+
+    let read ~heap ~ref () =
+      let open Error.Infix in
+      lookup ~heap ~ref ()
+      >>= fun b ->
+      let open Lwt.Infix in
+      Heap.Bytes.get_info b
+      >>= fun info ->
+      let open Error.FromBlock in
+      let buf = alloc info.Heap.Bytes.sector_size in
+      Heap.Bytes.read b 0L [ buf ]
+      >>= fun () ->
+      let magic' = Cstruct.to_string (get_node_hdr_magic buf) in
+      if magic <> magic'
+      then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected block header magic, expected '%s' but read '%s'" magic magic')))
+      else begin
+        Lwt.return (`Ok ())
+      end
+
+    let write ~heap ~ref ~t () =
+      let open Error.Infix in
+      lookup ~heap ~ref ()
+      >>= fun b ->
+      let open Lwt.Infix in
+      Heap.Bytes.get_info b
+      >>= fun info ->
+      let open Error.FromBlock in
+      let buf = alloc info.Heap.Bytes.sector_size in
+      set_node_hdr_magic magic 0 buf;
+      Heap.Bytes.write b 0L [ buf ]
+      >>= fun () ->
+      Lwt.return (`Ok ())
+  end
+
   let connect block =
     let open Lwt.Infix in
     B.get_info block
@@ -89,6 +139,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     Heap.Bytes.write bytes 0L [ buf ]
     >>= fun () ->
     Lwt.return (`Ok { heap; d })
+
 
   let insert _ _ = failwith "insert"
   let delete _ _ = failwith "delete"
