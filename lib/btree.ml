@@ -32,7 +32,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
   let magic = "MIRAGEBTREE\174\067\003\088\230"
 
-  cstruct hdr {
+  cstruct tree_hdr {
       uint8_t magic[16];
       uint16_t d;
     } as little_endian
@@ -62,8 +62,8 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
           let open Error.FromBlock in
           Heap.Bytes.read bytes 0L [ buf ]
           >>= fun () ->
-          let magic' = Cstruct.to_string (get_hdr_magic buf) in
-          let d = get_hdr_d buf in
+          let magic' = Cstruct.to_string (get_tree_hdr_magic buf) in
+          let d = get_tree_hdr_d buf in
           if magic <> magic'
           then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected b-tree description magic, expected '%s' but read '%s'" magic magic')))
           else Lwt.return (`Ok { heap; d })
@@ -80,11 +80,11 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun heap ->
     Heap.root ~heap ()
     >>= fun root ->
-    Heap.Bytes.allocate ~parent:root ~index:header_index ~length:(Int64.of_int sizeof_hdr) ()
+    Heap.Bytes.allocate ~parent:root ~index:header_index ~length:(Int64.of_int sizeof_tree_hdr) ()
     >>= fun bytes ->
     let buf = alloc info.B.sector_size in
-    set_hdr_magic magic 0 buf;
-    set_hdr_d buf d;
+    set_tree_hdr_magic magic 0 buf;
+    set_tree_hdr_d buf d;
     let open Error.FromBlock in
     Heap.Bytes.write bytes 0L [ buf ]
     >>= fun () ->
