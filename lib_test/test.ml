@@ -68,10 +68,10 @@ let heap_allocate_deallocate () =
     H.root ~heap:h ()
     >>= fun root ->
     let root = expect_ok_msg root in
-    H.Bytes.allocate ~parent:root ~index:0 ~length:1L ()
+    H.Block.allocate ~parent:root ~index:0 ~nrefs:1 ~nbytes:0L ()
     >>= fun block ->
     let block = expect_ok_msg block in
-    H.Bytes.deallocate ~t:block ()
+    H.Block.deallocate ~t:block ()
     >>= fun x ->
     let () = expect_ok_msg x in
     Lwt.return () in
@@ -93,36 +93,36 @@ let heap_write_read () =
     H.root ~heap:h ()
     >>= fun root ->
     let root = expect_ok_msg root in
-    H.Bytes.allocate ~parent:root ~index:0 ~length:1L ()
+    H.Block.allocate ~parent:root ~index:0 ~nbytes:1L ~nrefs:0 ()
     >>= fun block1 ->
     let bytes1 = expect_ok_msg block1 in
-    H.Bytes.allocate ~parent:root ~index:2 ~length:1L ()
+    H.Block.allocate ~parent:root ~index:2 ~nbytes:1L ~nrefs:0 ()
     >>= fun block2 ->
     let bytes2 = expect_ok_msg block2 in
     (* Fill block1 with random data *)
     Random.self_init();
-    Mirage_block.random (module H.Bytes) bytes1
+    Mirage_block.random (module H.Block) bytes1
     >>= fun x ->
     let () = expect_ok_msg x in
     (* block1 should be different to block2 *)
-    Mirage_block.compare (module H.Bytes) bytes1 (module H.Bytes) bytes2
+    Mirage_block.compare (module H.Block) bytes1 (module H.Block) bytes2
     >>= fun x ->
     let result = expect_ok_msg x in
     if result == 0 then failwith "blocks erroneously compared the same";
     (* Copy block1 to block2 *)
-    Mirage_block.copy (module H.Bytes) bytes1 (module H.Bytes) bytes2
+    Mirage_block.copy (module H.Block) bytes1 (module H.Block) bytes2
     >>= fun x ->
     let () = expect_ok_msg x in
     (* block1 should be the same as block2 *)
-    Mirage_block.compare (module H.Bytes) bytes1 (module H.Bytes) bytes2
+    Mirage_block.compare (module H.Block) bytes1 (module H.Block) bytes2
     >>= fun x ->
     let result = expect_ok_msg x in
     assert_equal ~printer:string_of_int 0 result;
     (* Deallocate in the "easy" order to not use the GC codepath *)
-    H.Bytes.deallocate ~t:bytes2 ()
+    H.Block.deallocate ~t:bytes2 ()
     >>= fun x ->
     let () = expect_ok_msg x in
-    H.Bytes.deallocate ~t:bytes1 ()
+    H.Block.deallocate ~t:bytes1 ()
     >>= fun x ->
     let () = expect_ok_msg x in
     Lwt.return () in
@@ -133,7 +133,7 @@ let tree_create () =
     Ramdisk.connect ~name:"heap"
     >>= fun x ->
     let block = expect_ok "Ramdisk.connect" x in
-    let module T = Btree.Make(Ramdisk)(StringElement) in
+    let module T = Btree.Make(Ramdisk)(IntElement) in
     T.create ~block ~d:2 ()
     >>= fun t ->
     let _ = expect_ok "T.create" t in

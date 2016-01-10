@@ -25,7 +25,7 @@ end
 module type SERIALISABLE = sig
   type t
 
-  val size: t -> int
+  val size: int
 
   val marshal: t -> Cstruct.t -> Cstruct.t error
   val unmarshal: Cstruct.t -> (t * Cstruct.t) error

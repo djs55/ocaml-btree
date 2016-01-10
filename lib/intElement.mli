@@ -16,4 +16,4 @@
  *)
 
 include Btree_s.ELEMENT
-  with type t = string
+  with type t = int64

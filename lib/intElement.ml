@@ -15,21 +15,23 @@
  *
  *)
 
-type t = string
+type t = int64
 
 let compare (a: t) (b: t) = compare a b
 
-let size t = String.length t
+let size = 8
 
 let marshal t buf =
-  let t' = size t in
   let buf' = Cstruct.len buf in
-  if t' > buf'
-  then `Error (`Msg (Printf.sprintf "Cannot marshal string of length %d into buffer of length %d" t' buf'))
+  if size > buf'
+  then `Error (`Msg (Printf.sprintf "Cannot marshal value of length %d into buffer of length %d" size buf'))
   else begin
-    Cstruct.blit_from_string t 0 buf 0 t';
-    `Ok (Cstruct.shift buf t')
+    Cstruct.LE.set_uint64 buf 0 t;
+    `Ok (Cstruct.shift buf size)
   end
 
 let unmarshal buf =
-  `Error (`Msg "unmarshal unimplemented")
+  let buf' = Cstruct.len buf in
+  if size > buf'
+  then `Error (`Msg (Printf.sprintf "Cannot unmarshal value of length %d from buffer of length %d" size buf'))
+  else `Ok (Cstruct.LE.get_uint64 buf 0, Cstruct.shift buf size)
