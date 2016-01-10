@@ -12,7 +12,7 @@ Library btree
   CompiledObject:     best
   Path:               lib
   Findlibname:        btree
-  Modules:            Btree, Heap, Error, StringElement, Btree_s
+  Modules:            Btree, Heap, Error, IntElement, Btree_s
   BuildDepends:       result, cstruct, cstruct.syntax, sexplib, sexplib.syntax,
                       mirage-types.lwt, lwt, mirage-block
   XMETARequires:      result, cstruct, sexplib, sexplib,
