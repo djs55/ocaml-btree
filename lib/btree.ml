@@ -16,6 +16,7 @@
  *)
 
 let alloc = Heap.alloc
+let roundup = Heap.roundup
 
 module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
   type element = E.t
@@ -48,47 +49,77 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
         uint8_t magic[16];
       } as little_endian
 
-    type t = unit
+    let sizeof_node t = sizeof_node_hdr + (2 * t.d * E.size)
 
-    let read ~heap ~ref () =
+    type node = {
+      t: t;
+      ref: Heap.reference;
+      keys: E.t array;
+    }
+
+    let read ~t ~ref () =
       let open Error.Infix in
-      Heap.lookup ~heap ~ref ()
+      Heap.lookup ~heap:t.heap ~ref ()
       >>= fun b ->
       let open Lwt.Infix in
       Heap.Block.get_info b
       >>= fun info ->
       let open Error.FromBlock in
-      let buf = alloc info.Heap.Block.sector_size in
+      let buf = alloc (roundup info.Heap.Block.sector_size (sizeof_node_hdr + (2 * t.d * E.size))) in
       Heap.Block.read b 0L [ buf ]
       >>= fun () ->
+      let open Error.Infix in
       let magic' = Cstruct.to_string (get_node_hdr_magic buf) in
       if magic <> magic'
       then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected block header magic, expected '%s' but read '%s'" magic magic')))
       else begin
-        Lwt.return (`Ok ())
+        let buf = Cstruct.shift buf sizeof_node_hdr in
+        let rec loop acc rest remaining =
+          let open Error.Infix in
+          if remaining = 0
+          then return (List.rev acc)
+          else begin
+            Lwt.return (E.unmarshal rest)
+            >>= fun (e, rest) ->
+            loop (e :: acc) rest (remaining - 1)
+          end in
+        loop [] buf t.d
+        >>= fun keys ->
+        let keys = Array.of_list keys in
+        Lwt.return (`Ok { t; ref; keys })
       end
 
-    let write ~heap ~ref ~t () =
+    let write_internal ~heap ~d ~ref ~keys () =
       let open Error.Infix in
       Heap.lookup ~heap ~ref ()
       >>= fun b ->
       let open Lwt.Infix in
       Heap.Block.get_info b
       >>= fun info ->
-      let open Error.FromBlock in
-      let buf = alloc info.Heap.Block.sector_size in
+      let buf = alloc(roundup info.Heap.Block.sector_size (sizeof_node_hdr + (2 * d * E.size))) in
       set_node_hdr_magic magic 0 buf;
+      let open Error.Infix in
+      let rec loop rest = function
+        | [] -> return rest
+        | e :: es ->
+          Lwt.return (E.marshal e rest)
+          >>= fun rest ->
+          loop rest es in
+      loop (Cstruct.shift buf sizeof_node_hdr) (Array.to_list keys)
+      >>= fun _padding ->
+      let open Error.FromBlock in
       Heap.Block.write b 0L [ buf ]
       >>= fun () ->
-      Lwt.return (`Ok ())
+      return ()
+
+    let write ~node () = write_internal ~heap:node.t.heap ~d:node.t.d ~ref:node.ref ~keys:node.keys
 
     let allocate ~heap ~d ~parent ~index () =
       let open Error.Infix in
-      Heap.Block.allocate ~parent ~index ~nrefs:(2 * d) ~nbytes:(Int64.of_int (2 * d * E.size)) ()
+      Heap.Block.allocate ~parent ~index ~nrefs:(2 * d + 1) ~nbytes:(Int64.of_int (sizeof_node_hdr + (2 * d * E.size))) ()
       >>= fun block ->
       let ref = Heap.Block.ref block in
-      let t = () in
-      write ~heap ~ref ~t ()
+      write_internal ~heap ~d ~ref ~keys:[||] ()
       >>= fun () ->
       Lwt.return (`Ok ref)
   end
@@ -149,6 +180,15 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun root ->
     Lwt.return (`Ok { heap; d; root })
 
-  let insert _ _ = failwith "insert"
-  let delete _ _ = failwith "delete"
+  let insert t element =
+    let open Error.Infix in
+    Node.read ~t ~ref:t.root ()
+    >>= fun _ ->
+    failwith "insert"
+
+  let delete t element =
+    let open Error.Infix in
+    Node.read ~t ~ref:t.root ()
+    >>= fun _ ->
+    failwith "delete"
 end

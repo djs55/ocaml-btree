@@ -28,4 +28,6 @@ module Infix = struct
   let (>>=) m f = m >>= function
     | `Error e -> Lwt.return (`Error e)
     | `Ok x -> f x
+
+  let return x = Lwt.return (`Ok x)
 end

@@ -70,3 +70,6 @@ end
 
 val alloc: int -> Cstruct.t
 (** [alloc n] allocate a page-aligned buffer of length [n] *)
+
+val roundup: int -> int -> int
+(** [roundup quantum x] rounds [x] up to the nearest [quantum] *)
