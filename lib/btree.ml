@@ -47,6 +47,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
     cstruct node_hdr {
         uint8_t magic[16];
+        uint16_t n; (* current size of the array *)
       } as little_endian
 
     let sizeof_node t = sizeof_node_hdr + (2 * t.d * E.size)
@@ -73,6 +74,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       if magic <> magic'
       then Lwt.return (`Error (`Msg (Printf.sprintf "Unexpected block header magic, expected '%s' but read '%s'" magic magic')))
       else begin
+        let n = get_node_hdr_n buf in
         let buf = Cstruct.shift buf sizeof_node_hdr in
         let rec loop acc rest remaining =
           let open Error.Infix in
@@ -83,7 +85,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
             >>= fun (e, rest) ->
             loop (e :: acc) rest (remaining - 1)
           end in
-        loop [] buf t.d
+        loop [] buf n
         >>= fun keys ->
         let keys = Array.of_list keys in
         Lwt.return (`Ok { t; ref; keys })
@@ -98,6 +100,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       >>= fun info ->
       let buf = alloc(roundup info.Heap.Block.sector_size (sizeof_node_hdr + (2 * d * E.size))) in
       set_node_hdr_magic magic 0 buf;
+      set_node_hdr_n buf (Array.length keys);
       let open Error.Infix in
       let rec loop rest = function
         | [] -> return rest
