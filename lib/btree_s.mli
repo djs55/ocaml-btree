@@ -19,7 +19,7 @@ open Error
 module type COMPARABLE = sig
   type t
 
-  val compare: t -> t -> int
+  val compare: t -> t -> [ `LessThan | `Equal | `GreaterThan ]
 end
 
 module type SERIALISABLE = sig

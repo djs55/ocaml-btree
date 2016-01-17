@@ -17,7 +17,11 @@
 
 type t = int64
 
-let compare (a: t) (b: t) = compare a b
+let compare (a: t) (b: t) = match compare a b with
+  | 0 -> `Equal
+  | -1 -> `LessThan
+  | 1 -> `GreaterThan
+  | _ -> assert false
 
 let size = 8
 
