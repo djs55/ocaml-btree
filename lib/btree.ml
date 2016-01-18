@@ -214,19 +214,26 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
   let insert t element =
     let open Error.Infix in
-    Node.read ~t ~ref:t.root ()
-    >>= fun node ->
-    match search t element node with
-    | `Found _ ->
-      failwith "unimplemented: replace existing mapping"
-    | `Follow _ ->
-      (* If idx is a valid reference then follow it *)
-      if true then failwith "unimplemented: recurse";
-      if Array.length node.Node.keys = 2 * t.d then begin
-        failwith "unimplemented: split node"
-      end else begin
-        failwith "unimplemented: insert into existing node"
-      end
+    let rec aux ref =
+      Node.read ~t ~ref ()
+      >>= fun node ->
+      match search t element node with
+      | `Found _ ->
+        failwith "unimplemented: replace existing mapping"
+      | `Follow idx ->
+        begin Node.geti node idx
+        >>= function
+        | None ->
+          (* insert into this node *)
+          if Array.length node.Node.keys = 2 * t.d then begin
+            failwith "unimplemented: split node"
+          end else begin
+            failwith "unimplemented: insert into existing node"
+          end
+        | Some ref ->
+          aux ref
+        end in
+    aux t.root
 
   let mem t element =
     let open Error.Infix in
