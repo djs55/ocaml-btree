@@ -55,6 +55,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     type node = {
       t: t;
       ref: Heap.reference;
+      block: Heap.Block.t;
       keys: E.t array;
     }
 
@@ -88,7 +89,8 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
         loop [] buf n
         >>= fun keys ->
         let keys = Array.of_list keys in
-        Lwt.return (`Ok { t; ref; keys })
+        let block = b in
+        Lwt.return (`Ok { t; ref; block; keys })
       end
 
     let write_internal ~heap ~d ~ref ~keys () =
@@ -214,6 +216,40 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       end else begin
         failwith "unimplemented: insert into existing node"
       end
+
+  let mem t element =
+    let open Error.Infix in
+    let rec aux ref =
+      Node.read ~t ~ref ()
+      >>= fun node ->
+      match search t element node with
+      | `After ->
+        if Array.length node.Node.keys = 0
+        then Lwt.return (`Ok false)
+        else begin
+          (* Look up reference len *)
+          Heap.Block.get node.Node.block
+          >>= fun refs ->
+          begin match refs.(Array.length node.Node.keys) with
+          | Some rf ->
+            aux rf
+          | None ->
+            Lwt.return (`Ok false)
+          end
+        end
+      | `Here _ ->
+        Lwt.return (`Ok true)
+      | `Before idx ->
+        (* Look up reference idx *)
+        Heap.Block.get node.Node.block
+        >>= fun refs ->
+        begin match refs.(idx) with
+        | Some rf ->
+          aux rf
+        | None ->
+          Lwt.return (`Ok false)
+        end in
+    aux t.root
 
   let delete t element =
     let open Error.Infix in

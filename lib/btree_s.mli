@@ -62,4 +62,5 @@ module type TREE = sig
 
   val insert: t -> element -> t error Lwt.t
   val delete: t -> element -> t error Lwt.t
+  val mem: t -> element -> bool error Lwt.t
 end
