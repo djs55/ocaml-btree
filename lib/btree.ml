@@ -56,7 +56,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       t: t;
       ref: Heap.reference;
       block: Heap.Block.t;
-      keys: E.t array;
+      mutable keys: E.t array;
     }
 
     let geti node i =
@@ -130,7 +130,26 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       >>= fun () ->
       return ()
 
-    let write ~node () = write_internal ~heap:node.t.heap ~d:node.t.d ~ref:node.ref ~keys:node.keys
+    let write ~node () = write_internal ~heap:node.t.heap ~d:node.t.d ~ref:node.ref ~keys:node.keys ()
+
+    let inserti node i (element, refopt) =
+      node.keys <- Array.init (Array.length node.keys + 1)
+        (fun j ->
+          if j < i then node.keys.(j)
+          else if j = i then element
+          else node.keys.(j-1)
+        );
+      let open Error.Infix in
+      Heap.Block.get node.block
+      >>= fun refs ->
+      assert (refs.(Array.length refs - 1) = None);
+      for i = Array.length refs - 1 downto i + 1 do
+        refs.(i) <- refs.(i - 1)
+      done;
+      refs.(i) <- refopt;
+      Heap.Block.set node.block refs
+      >>= fun () ->
+      write ~node ()
 
     let allocate ~heap ~d ~parent ~index () =
       let open Error.Infix in
@@ -228,7 +247,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
           if Array.length node.Node.keys = 2 * t.d then begin
             failwith "unimplemented: split node"
           end else begin
-            failwith "unimplemented: insert into existing node"
+            Node.inserti node idx (element, None)
           end
         | Some ref ->
           aux ref
