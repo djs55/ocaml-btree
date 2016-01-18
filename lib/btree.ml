@@ -219,7 +219,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       >>= fun node ->
       match search t element node with
       | `Found _ ->
-        failwith "unimplemented: replace existing mapping"
+        Lwt.return (`Ok ())
       | `Follow idx ->
         begin Node.geti node idx
         >>= function
