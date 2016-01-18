@@ -183,10 +183,7 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun root ->
     Lwt.return (`Ok { heap; d; root })
 
-  let insert t element =
-    let open Error.Infix in
-    Node.read ~t ~ref:t.root ()
-    >>= fun node ->
+  let search t element node =
     (* Find the least element greater than or equal to the one to be inserted *)
     let least_greater, _ = Array.fold_left (fun (result, idx) e ->
       match E.compare node.Node.keys.(idx) element with
@@ -194,11 +191,22 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       | `Equal
       | `GreaterThan -> min result idx, idx + 1
     ) (max_int, 0) node.Node.keys in
-    if least_greater = max_int then begin
+    if least_greater = max_int
+    then `After (* this element would logically be after all existing elements *)
+    else if E.compare node.Node.keys.(least_greater) element = `Equal
+    then `Here least_greater (* this exact element found *)
+    else `Before least_greater (* element would be just before this one *)
+
+  let insert t element =
+    let open Error.Infix in
+    Node.read ~t ~ref:t.root ()
+    >>= fun node ->
+    match search t element node with
+    | `After ->
       failwith "unimplemented: insert into empty node"
-    end else if E.compare node.Node.keys.(least_greater) element = `Equal then begin
+    | `Here _ ->
       failwith "unimplemented: replace existing mapping"
-    end else begin
+    | `Before _ ->
       (* If idx is a valid reference then follow it *)
       if true then failwith "unimplemented: recurse";
       if Array.length node.Node.keys = 2 * t.d then begin
@@ -206,7 +214,6 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       end else begin
         failwith "unimplemented: insert into existing node"
       end
-    end
 
   let delete t element =
     let open Error.Infix in
