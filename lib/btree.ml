@@ -185,6 +185,8 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
     >>= fun root ->
     Lwt.return (`Ok { heap; d; root })
 
+  (* Find the [element] within [node] or return the index of a reference
+     pointer which should be followed (if it isn't None) *)
   let search t element node =
     (* Find the least element greater than or equal to the one to be inserted *)
     let least_greater, _ = Array.fold_left (fun (result, idx) e ->
@@ -192,23 +194,19 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       | `LessThan -> result, idx + 1
       | `Equal
       | `GreaterThan -> min result idx, idx + 1
-    ) (max_int, 0) node.Node.keys in
-    if least_greater = max_int
-    then `After (* this element would logically be after all existing elements *)
-    else if E.compare node.Node.keys.(least_greater) element = `Equal
-    then `Here least_greater (* this exact element found *)
-    else `Before least_greater (* element would be just before this one *)
+    ) (Array.length node.Node.keys, 0) node.Node.keys in
+    if E.compare node.Node.keys.(least_greater) element = `Equal
+    then `Found least_greater
+    else `Follow least_greater
 
   let insert t element =
     let open Error.Infix in
     Node.read ~t ~ref:t.root ()
     >>= fun node ->
     match search t element node with
-    | `After ->
-      failwith "unimplemented: insert into empty node"
-    | `Here _ ->
+    | `Found _ ->
       failwith "unimplemented: replace existing mapping"
-    | `Before _ ->
+    | `Follow _ ->
       (* If idx is a valid reference then follow it *)
       if true then failwith "unimplemented: recurse";
       if Array.length node.Node.keys = 2 * t.d then begin
@@ -223,23 +221,9 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       Node.read ~t ~ref ()
       >>= fun node ->
       match search t element node with
-      | `After ->
-        if Array.length node.Node.keys = 0
-        then Lwt.return (`Ok false)
-        else begin
-          (* Look up reference len *)
-          Heap.Block.get node.Node.block
-          >>= fun refs ->
-          begin match refs.(Array.length node.Node.keys) with
-          | Some rf ->
-            aux rf
-          | None ->
-            Lwt.return (`Ok false)
-          end
-        end
-      | `Here _ ->
+      | `Found _ ->
         Lwt.return (`Ok true)
-      | `Before idx ->
+      | `Follow idx ->
         (* Look up reference idx *)
         Heap.Block.get node.Node.block
         >>= fun refs ->
