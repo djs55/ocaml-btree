@@ -59,6 +59,19 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       keys: E.t array;
     }
 
+    let geti node i =
+      let open Error.Infix in
+      Heap.Block.get node.block
+      >>= fun refs ->
+      Lwt.return (`Ok refs.(i))
+
+    let seti node i refopt =
+      let open Error.Infix in
+      Heap.Block.get node.block
+      >>= fun refs ->
+      refs.(i) <- refopt;
+      Heap.Block.set node.block refs
+
     let read ~t ~ref () =
       let open Error.Infix in
       Heap.lookup ~heap:t.heap ~ref ()
@@ -224,10 +237,8 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
       | `Found _ ->
         Lwt.return (`Ok true)
       | `Follow idx ->
-        (* Look up reference idx *)
-        Heap.Block.get node.Node.block
-        >>= fun refs ->
-        begin match refs.(idx) with
+        begin Node.geti node idx
+        >>= function
         | Some rf ->
           aux rf
         | None ->
@@ -237,7 +248,23 @@ module Make(B: V1_LWT.BLOCK)(E: Btree_s.ELEMENT) = struct
 
   let delete t element =
     let open Error.Infix in
-    Node.read ~t ~ref:t.root ()
-    >>= fun _ ->
-    failwith "delete"
+    let rec aux ref =
+      Node.read ~t ~ref ()
+      >>= fun node ->
+      match search t element node with
+      | `Found idx ->
+        if Array.length node.Node.keys <= t.d then begin
+          failwith "unimplemented: attempt to combine nodes"
+        end else begin
+          failwith "unimplemented: delete from node"
+        end
+      | `Follow idx ->
+        begin Node.geti node idx
+        >>= function
+        | Some rf ->
+          aux rf
+        | None ->
+          Lwt.return (`Ok ())
+        end in
+    aux t.root
 end
